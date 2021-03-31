@@ -12,7 +12,7 @@ Create a task with URI pointing to CSV dataset which will be converted to Json a
 #### GET /task/
 
 ## Task Detail 
-#### GET /task/<taskId>
+#### GET /task/[taskId]
 Return informations about the task:    
 - lines processed
 - avg lines processed (count/sec)
@@ -22,7 +22,7 @@ Return informations about the task:
 Keep the connection open until the task isn't in a terminal state and send the updated response every 2 seconds.
 
 ## Cancel Task
-#### DELETE /task/<taskId>
+#### DELETE /task/[taskId]
 Tasks in `SCHEDULED` or `RUNNING` state can be canceled.
 
 ## Get JSON File
