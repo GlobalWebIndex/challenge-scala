@@ -1,2 +1,21 @@
 *.class
 *.log
+
+# sbt specific
+.cache
+.history
+.lib/
+dist/*
+target/
+
+# Scala-IDE specific
+.scala_dependencies
+.worksheet
+.bsp/
+
+project/boot/
+.history
+.cache
+
+.idea/
+*.iml
