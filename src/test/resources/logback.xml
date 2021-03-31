@@ -1,0 +1,37 @@
+<configuration>
+    <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>[%date{ISO8601}] [%-5level] [%thread] [%logger{36}] [%X{sourceActorSystem}] %msg%n</pattern>
+            <charset>UTF-8</charset>
+        </encoder>
+    </appender>
+    <if condition='isDefined("log.file")'>
+        <then>
+            <appender name="FILEOUT" class="ch.qos.logback.core.rolling.RollingFileAppender">
+                <file>${log.file}.log</file>
+                <append>true</append>
+                <prudent>true</prudent>
+                <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
+                    <fileNamePattern>${log.file}.%d{yyyy-MM-dd}.log</fileNamePattern>
+                    <maxHistory>30</maxHistory>
+                </rollingPolicy>
+                <encoder>
+                    <pattern>[%date{ISO8601}] [%-5level] [%thread] [%logger{36}] [%X{sourceActorSystem}] %msg%n</pattern>
+                    <charset>UTF-8</charset>
+                </encoder>
+            </appender>
+        </then>
+    </if>
+    <root level="${log.root:-INFO}">
+        <if condition='isDefined("log.file")'>
+            <then>
+                <appender-ref ref="FILEOUT" />
+            </then>
+            <else>
+                <appender-ref ref="STDOUT" />
+            </else>
+        </if>
+    </root>
+    <logger name="pl.datart" level="INFO"/>
+
+</configuration>
