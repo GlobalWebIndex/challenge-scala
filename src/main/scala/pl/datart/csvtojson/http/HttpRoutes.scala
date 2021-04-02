@@ -1,32 +1,66 @@
 package pl.datart.csvtojson.http
 
 import akka.http.scaladsl.marshallers.sprayjson.SprayJsonSupport._
-import akka.http.scaladsl.model.StatusCodes.BadRequest
+import akka.http.scaladsl.model.StatusCodes._
 import akka.http.scaladsl.model._
 import akka.http.scaladsl.server.Directives._
 import akka.http.scaladsl.server.Route
 import pl.datart.csvtojson.model.JsonFormats._
 import pl.datart.csvtojson.model._
-import pl.datart.csvtojson.service.TaskEnqueuer
-import pl.datart.csvtojson.util.FConverter
-import pl.datart.csvtojson.util.FConverter._
+import pl.datart.csvtojson.service._
+import pl.datart.csvtojson.util.FAdapter
+import pl.datart.csvtojson.util.FAdapter._
+import spray.json.DefaultJsonProtocol._
 
+import java.util.UUID
 import scala.concurrent.Future
 import scala.util._
 
 @SuppressWarnings(Array("org.wartremover.warts.Any", "org.wartremover.warts.Nothing"))
-class HttpRoutes[F[_]](taskEnqueuer: TaskEnqueuer[F])(implicit fConverter: FConverter[F, Future]) {
+class HttpRoutes[F[_]](taskEnqueuer: TaskScheduler[F], taskService: TaskService[F])(implicit
+    fConverter: FAdapter[F, Future]
+) {
   val routes: Route =
-    path("task") {
-      post {
-        entity(as[RawUri]) { rawUri =>
-          onComplete(taskEnqueuer.enqueue(rawUri).toFuture) {
-            case Failure(ex)     =>
-              complete(HttpResponse(BadRequest, entity = s"Could not enqueue file, reason: ${ex.getMessage}"))
-            case Success(taskId) =>
-              complete(taskId)
+    pathPrefix("task") {
+      pathEndOrSingleSlash {
+        get {
+          onComplete(taskService.getTasks.adapt) {
+            case Failure(ex)               =>
+              complete(HttpResponse(InternalServerError, entity = s"Could not list tasks, reason: ${ex.getMessage}"))
+            case scala.util.Success(tasks) =>
+              complete(tasks)
+          }
+        } ~
+          post {
+            entity(as[RawUri]) { rawUri =>
+              val parsedUri = Try(Uri(rawUri.uri))
+              validate(parsedUri.isSuccess, parsedUri.failed.fold(_.getMessage, _.getMessage)) {
+                onComplete(taskEnqueuer.schedule(rawUri).adapt) {
+                  case Failure(ex)                =>
+                    complete(HttpResponse(BadRequest, entity = s"Could not enqueue file, reason: ${ex.getMessage}"))
+                  case scala.util.Success(taskId) =>
+                    complete(taskId)
+                }
+              }
+            }
+          }
+      } ~
+        path(JavaUUID) { uuid: UUID =>
+          delete {
+            onComplete(taskEnqueuer.cancelTask(TaskId(uuid.toString)).adapt) {
+              case Failure(ex)                            =>
+                complete(HttpResponse(BadRequest, entity = ex.getMessage))
+              case scala.util.Success(cancellationResult) =>
+                cancellationResult match {
+                  case Some(CancellationResult.Canceled)            =>
+                    complete(OK)
+                  case Some(CancellationResult.NotCanceled(reason)) =>
+                    complete(BadRequest, reason)
+                  case _                                            =>
+                    complete(NotFound)
+                }
+            }
           }
         }
-      }
     }
 }
