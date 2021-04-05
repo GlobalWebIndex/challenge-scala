@@ -1,10 +1,19 @@
 package gwi
 
+import akka._
+import akka.actor.typed._
+import akka.actor.typed.scaladsl.AskPattern._
 import akka.http.scaladsl.model.Uri
 import akka.stream.scaladsl.Source
-import akka.util.ByteString
-import akka.Done
+import akka.util._
+import gwi.Manager._
 import scala.concurrent.Future
+import scala.concurrent.duration.DurationInt
+
+object TaskService {
+  def apply(ref: ActorRef[Command], storage: Storage)(implicit t: Timeout, system: ActorSystem[_]): TaskService =
+    new TaskServiceImpl(ref, storage)
+}
 
 trait TaskService {
 
@@ -26,4 +35,34 @@ trait TaskService {
     * is not in state Done.
     */
   def result(id: TaskId): Future[Source[ByteString, _]]
+}
+
+private class TaskServiceImpl(ref: ActorRef[Command], storage: Storage)(implicit t: Timeout, system: ActorSystem[_])
+    extends TaskService {
+  import system.executionContext
+
+  override def create(source: Uri): Future[TaskId] =
+    ref.askWithStatus(Create(source, _))
+
+  override def getAll: Future[List[Task]] =
+    ref.askWithStatus(GetAll)
+
+  override def get(id: TaskId): Future[Source[Task, NotUsed]] = {
+    def getTask: Future[Task] = ref.askWithStatus(Get(id, _))
+    getTask.map { task =>
+      Source
+        .single(task)
+        .concat(Source.tick(2.seconds, 2.seconds, NotUsed).mapAsync(parallelism = 1)(_ => getTask))
+        .takeWhile(t => !Task.isTerminal(t), inclusive = true)
+    }
+  }
+
+  override def cancel(id: TaskId): Future[Done] =
+    ref.askWithStatus(Cancel(id, _))
+
+  override def result(id: TaskId): Future[Source[ByteString, _]] =
+    ref.askWithStatus(Get(id, _)).flatMap {
+      case DoneTask(`id`, _, _, _) => Future.successful(storage.source(id))
+      case _                       => Future.failed(BadRequestError("Task is not in state DONE"))
+    }
 }
