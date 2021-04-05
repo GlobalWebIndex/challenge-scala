@@ -4,8 +4,7 @@ import akka.actor.typed.ActorSystem
 import akka.actor.typed.scaladsl.Behaviors
 import akka.http.scaladsl.Http
 import akka.http.scaladsl.Http.ServerBinding
-import akka.http.scaladsl.server.Directives._
-import akka.http.scaladsl.server.Route
+import akka.http.scaladsl.server.{ ExceptionHandler => _, _ }
 import org.slf4j.LoggerFactory
 import scala.concurrent._
 import scala.concurrent.duration._
@@ -19,9 +18,10 @@ object Main {
       val system = context.system
       import system.executionContext
 
-      val route: Route = complete("ok")
+      val service = new DummyTaskService
+      val endpoints = new TaskEndpoints(service)
 
-      context.pipeToSelf(startHttpServer(system, Route.seal(route)))(identity)
+      context.pipeToSelf(startHttpServer(system, seal(endpoints.route)))(identity)
       Behaviors.receiveMessage {
         case Success(ServerBinding(localAddress)) =>
           log.info("Server has started ({})", localAddress)
@@ -43,4 +43,6 @@ object Main {
       .bind(route)
       .map(_.addToCoordinatedShutdown(60.seconds))
   }
+
+  def seal(route: Route): Route = Route.seal(route)(exceptionHandler = ExceptionHandler())
 }

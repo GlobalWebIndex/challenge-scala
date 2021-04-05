@@ -1,0 +1,26 @@
+### Create a new task
+
+POST localhost:8080/task
+Content-Type: application/json
+
+{
+  "source": "https://www.sample-videos.com/csv/Sample-Spreadsheet-10000-rows.csv"
+}
+
+### Get all tasks
+
+GET localhost:8080/task
+Content-Type: application/json
+
+### Get task
+### npm install -g wscat
+### wscat --connect ws://localhost:8080/task/1
+
+### Cancel task
+
+DELETE localhost:8080/task/1
+
+### Get result
+
+GET localhost:8080/result/1
+Content-Type: application/json
