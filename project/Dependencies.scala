@@ -5,6 +5,8 @@ object Dependencies {
   private val akkaStream      = "com.typesafe.akka"           %% "akka-stream"                          % VersionsOf.akka
   private val akkaHttp        = "com.typesafe.akka"           %% "akka-http"                            % VersionsOf.akkaHttp
   private val akkaHttpSpray   = "com.typesafe.akka"           %% "akka-http-spray-json"                 % VersionsOf.akkaHttp
+  private val akkaHttpTest    = "com.typesafe.akka"           %% "akka-http-testkit"                    % VersionsOf.akkaHttp       % Test
+  private val akkaStreamTest  = "com.typesafe.akka"           %% "akka-stream-testkit"                  % VersionsOf.akka           % Test
   private val alpakkaCsv      = "com.lightbend.akka"          %% "akka-stream-alpakka-json-streaming"   % VersionsOf.alpakka
   private val alpakkaJson     = "com.lightbend.akka"          %% "akka-stream-alpakka-csv"              % VersionsOf.alpakka
   private val betterFiles     = "com.github.pathikrit"        %% "better-files"                         % VersionsOf.betterFiles
@@ -20,6 +22,8 @@ object Dependencies {
     akkaStream,
     akkaHttp,
     akkaHttpSpray,
+    akkaHttpTest,
+    akkaStreamTest,
     alpakkaCsv,
     alpakkaJson,
     betterFiles,

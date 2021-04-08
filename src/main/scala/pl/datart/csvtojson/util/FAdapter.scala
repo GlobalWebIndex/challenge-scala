@@ -12,8 +12,8 @@ trait FAdapter[F[_], G[_]] {
 
 @SuppressWarnings(Array("org.wartremover.warts.ImplicitConversion", "org.wartremover.warts.ImplicitParameter"))
 object FAdapter {
-  implicit class FAdapt[F[_], G[_], T](a: F[T])(implicit fConverter: FAdapter[F, G]) {
-    implicit def adapt: G[T] = fConverter.adapt(a)
+  implicit class FAdapt[F[_], G[_], T](a: F[T])(implicit fAdapter: FAdapter[F, G]) {
+    implicit def adapt: G[T] = fAdapter.adapt(a)
   }
 
   class FAdapterIOF(implicit ioRuntime: IORuntime) extends FAdapter[IO, Future] {
@@ -21,6 +21,6 @@ object FAdapter {
   }
 
   object FAdapterIOFGlobal {
-    val converter: FAdapterIOF = new FAdapterIOF()(IORuntime.global)
+    val adapter: FAdapter[IO, Future] = new FAdapterIOF()(IORuntime.global)
   }
 }

@@ -1,12 +1,11 @@
-package pl.datart.csvtojson
+package pl.datart.csvtojson.service
 
 import akka.http.scaladsl.model.Uri
 import cats.effect._
 import org.scalatest.funspec.AsyncFunSpec
 import org.scalatest.matchers.should.Matchers
 import pl.datart.csvtojson.model._
-import pl.datart.csvtojson.service.TaskServiceImpl
-import pl.datart.csvtojson.util.FAdapter.FAdapterIOFGlobal.converter._
+import pl.datart.csvtojson.util.FAdapter.FAdapterIOFGlobal.adapter._
 
 import java.util.Date
 
