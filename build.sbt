@@ -2,6 +2,7 @@ import com.typesafe.config.Config
 
 val typesafeConfig = settingKey[Config]("Typesafe config object")
 
+resolvers += "Sonatype OSS Snapshots" at "https://oss.sonatype.org/content/repositories/snapshots"
 
 ThisBuild / organization := "pl.datart"
 ThisBuild / scalaVersion := "2.13.5"

@@ -2,32 +2,49 @@ package pl.datart.csvtojson.service
 
 import akka.http.scaladsl.model.Uri
 import cats.effect.Ref
-import cats.effect.kernel.Async
-import cats.syntax.flatMap._
-import cats.syntax.functor._
+import cats.effect._
+import cats.effect.std._
+import cats.syntax.all._
+import cats.effect.syntax.all._
+import fs2.concurrent.SignallingRef
 import pl.datart.csvtojson.model.TaskState._
 import pl.datart.csvtojson.model._
 import pl.datart.csvtojson.util.Cancellable
 
 import java.util.Date
+import scala.concurrent._
 
 trait TaskScheduler[F[_]] {
   def schedule(rawUri: RawUri): F[TaskId]
   def cancelTask(taskId: TaskId): F[Option[CancellationResult]]
 }
 
-@SuppressWarnings(Array("org.wartremover.warts.Any"))
-class TaskSchedulerImpl[F[_]](tasks: Ref[F, Map[TaskId, Task]], taskService: TaskService[F])(implicit async: Async[F])
-    extends TaskScheduler[F] {
+@SuppressWarnings(Array("org.wartremover.warts.Any", "org.wartremover.warts.ImplicitParameter"))
+class TaskSchedulerImpl[F[_]](
+    tasks: Ref[F, Map[TaskId, Task]],
+    semaphore: Semaphore[F],
+    taskService: TaskService[F],
+    taskRunner: TaskRunner[F]
+)(implicit
+    async: Async[F],
+    schedulerExecutionContext: ExecutionContext
+) extends TaskScheduler[F] {
+
   override def schedule(rawUri: RawUri): F[TaskId] = {
     for {
+      signal <- SignallingRef[F, Boolean](false)
       uri    <- async.pure(Uri(rawUri.uri))
       taskId <- TaskIdComp.create[F]
+      _      <- taskRunner.run(taskId, uri, signal).startOn(schedulerExecutionContext)
       task    = Task(
                   taskId = taskId,
                   uri = uri,
                   state = TaskState.Scheduled,
-                  cancelable = None,
+                  cancelable = Option(new Cancellable[Any] {
+                    def cancel: F[Unit] = {
+                      signal.set(true)
+                    }
+                  }),
                   scheduleTime = new Date(),
                   startTime = None,
                   endTime = None
@@ -40,15 +57,16 @@ class TaskSchedulerImpl[F[_]](tasks: Ref[F, Map[TaskId, Task]], taskService: Tas
     taskService.getTask(taskId).flatMap { taskOption =>
       taskOption.fold(async.pure(Option.empty[CancellationResult])) { task =>
         task.state match {
-          case Scheduled | Running =>
+          case Scheduled  =>
             cancel(task.cancelable)
-              .flatMap(_ =>
-                tasks.update(oldTasks =>
-                  oldTasks.removed(taskId) + (taskId -> task.copy(state = TaskState.Canceled, cancelable = None))
-                )
-              )
+              .flatMap(_ => taskService.updateTask(taskId, TaskState.Canceled))
               .map(_ => Option[CancellationResult](CancellationResult.Canceled))
-          case otherState          =>
+          case Running    =>
+            cancel(task.cancelable)
+              .flatMap(_ => taskService.updateTask(taskId, TaskState.Canceled))
+              .flatMap(_ => semaphore.release)
+              .map(_ => Option[CancellationResult](CancellationResult.Canceled))
+          case otherState =>
             async.pure {
               Option(
                 CancellationResult.NotCanceled(
@@ -61,7 +79,7 @@ class TaskSchedulerImpl[F[_]](tasks: Ref[F, Map[TaskId, Task]], taskService: Tas
     }
   }
 
-  private def cancel(cancelable: Option[Cancellable[Any]]): F[Unit] = {
+  private def cancel(cancelable: Option[pl.datart.csvtojson.util.Cancellable[Any]]): F[Unit] = {
     cancelable.fold(async.unit)(cancelable => async.pure(cancelable.cancel).map(_ => (())))
   }
 }
