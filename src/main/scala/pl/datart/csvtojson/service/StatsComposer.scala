@@ -30,20 +30,20 @@ object StatsComposerImpl extends StatsComposer {
         task.startTime
           .fold[Long](0L) { start =>
             val timeDiff = start.toInstant.until(new Date().toInstant, SECONDS)
-            if (timeDiff == 0L) {
-              0L
-            } else {
+            if (timeDiff != 0L) {
               countedLines / timeDiff
+            } else {
+              0L
             }
           }
       case TaskState.Done                                              =>
         (task.startTime, task.endTime) match {
           case (Some(start), Some(end)) =>
             val timeDiff = start.toInstant.until(end.toInstant, SECONDS)
-            if (timeDiff == 0L) {
-              0L
-            } else {
+            if (timeDiff != 0L) {
               countedLines / timeDiff
+            } else {
+              0L
             }
           case _                        =>
             0L

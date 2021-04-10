@@ -28,7 +28,7 @@ class HttpRoutesTest extends AsyncFunSpec with Matchers with ScalatestRouteTest 
   private val mockedTaskService = new TaskService[IO] {
     override def getTasks: IO[Iterable[TaskId]]                                 = IO.pure(Iterable.empty[TaskId])
     override def getTask(taskId: TaskId): IO[Option[Task]]                      = IO.pure(Option.empty[Task])
-    override def updateTask(taskId: TaskId, state: TaskState): IO[Option[Task]] = IO(Option.empty[Task])
+    override def updateTask(taskId: TaskId, state: TaskState): IO[Option[Task]] = IO.pure(Option.empty[Task])
     override def getStats(taskId: TaskId): IO[Option[StatsFlow]]                = IO(Option.empty[StatsFlow])
   }
 

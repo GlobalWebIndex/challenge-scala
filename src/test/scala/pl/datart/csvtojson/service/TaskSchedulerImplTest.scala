@@ -2,6 +2,8 @@ package pl.datart.csvtojson.service
 
 import akka.http.scaladsl.model.Uri
 import cats.effect._
+import cats.effect.std.Semaphore
+import fs2.concurrent.SignallingRef
 import org.scalatest.funspec._
 import org.scalatest.matchers.should.Matchers
 import pl.datart.csvtojson.model._
@@ -16,18 +18,24 @@ class TaskSchedulerImplTest extends AsyncFunSpec with Matchers {
 
   private implicit val async: Async[IO] = IO.asyncForIO
 
+  private val mockedTaskRunner = new TaskRunner[IO] {
+    override def run(taskId: TaskId, uri: Uri, signal: SignallingRef[IO, Boolean]): IO[Unit] =
+      IO(())
+  }
+
   describe("schedule") {
     it("schedules task to be done") {
-      val mockedTaskService = new TaskService[IO] {
+      val mockedTaskService: TaskService[IO] = new TaskService[IO] {
         override def getTasks: IO[Iterable[TaskId]]                                 = IO(Iterable.empty[TaskId])
         override def getTask(taskId: TaskId): IO[Option[Task]]                      = IO(Option.empty[Task])
-        override def updateTask(taskId: TaskId, state: TaskState): IO[Option[Task]] = IO(Option.empty[Task])
-        override def getStats(taskId: TaskId): IO[Option[StatsFlow]]                = IO(Option.empty[StatsFlow])
+        override def updateTask(taskId: TaskId, state: TaskState): IO[Option[Task]] = IO.pure(Option.empty[Task])
+        override def getStats(taskId: TaskId): IO[Option[StatsFlow]]                = IO(None)
       }
 
       for {
         tasks               <- Ref[IO].of(Map.empty[TaskId, Task])
-        testedImplementation = new TaskSchedulerImpl(tasks, mockedTaskService)
+        semaphore           <- Semaphore[IO](2)
+        testedImplementation = new TaskSchedulerImpl(tasks, semaphore, mockedTaskService, mockedTaskRunner)
         taskId              <- testedImplementation.schedule(RawUri(""))
         savedTask           <- tasks.get.map(_.get(taskId))
       } yield savedTask should not be empty
@@ -39,14 +47,15 @@ class TaskSchedulerImplTest extends AsyncFunSpec with Matchers {
       val mockedTaskService = new TaskService[IO] {
         override def getTasks: IO[Iterable[TaskId]]                                 = IO(Iterable.empty[TaskId])
         override def getTask(taskId: TaskId): IO[Option[Task]]                      = IO(Option.empty[Task])
-        override def updateTask(taskId: TaskId, state: TaskState): IO[Option[Task]] = IO(Option.empty[Task])
-        override def getStats(taskId: TaskId): IO[Option[StatsFlow]]                = IO(Option.empty[StatsFlow])
+        override def updateTask(taskId: TaskId, state: TaskState): IO[Option[Task]] = IO.pure(Option.empty[Task])
+        override def getStats(taskId: TaskId): IO[Option[StatsFlow]]                = IO(None)
       }
 
       for {
         taskId              <- TaskIdComp.create
         tasks               <- Ref[IO].of(Map.empty[TaskId, Task])
-        testedImplementation = new TaskSchedulerImpl(tasks, mockedTaskService)
+        semaphore           <- Semaphore[IO](2)
+        testedImplementation = new TaskSchedulerImpl(tasks, semaphore, mockedTaskService, mockedTaskRunner)
         cancellationResult  <- testedImplementation.cancelTask(taskId)
       } yield cancellationResult shouldBe None
     }
@@ -56,8 +65,8 @@ class TaskSchedulerImplTest extends AsyncFunSpec with Matchers {
         new TaskService[IO] {
           override def getTasks: IO[Iterable[TaskId]]                                 = IO(Iterable.single(task.taskId))
           override def getTask(taskId: TaskId): IO[Option[Task]]                      = IO(Option(task))
-          override def updateTask(taskId: TaskId, state: TaskState): IO[Option[Task]] = IO(Option.empty[Task])
-          override def getStats(taskId: TaskId): IO[Option[StatsFlow]]                = IO(Option.empty[StatsFlow])
+          override def updateTask(taskId: TaskId, state: TaskState): IO[Option[Task]] = IO.pure(Option.empty[Task])
+          override def getStats(taskId: TaskId): IO[Option[StatsFlow]]                = IO(None)
         }
 
       val mockedCancellable = Option.empty[Cancellable[Any]]
@@ -66,7 +75,8 @@ class TaskSchedulerImplTest extends AsyncFunSpec with Matchers {
         taskId              <- TaskIdComp.create
         task                 = Task(taskId, Uri(""), TaskState.Scheduled, mockedCancellable, new Date(), None, None)
         tasks               <- Ref[IO].of(Map.empty[TaskId, Task])
-        testedImplementation = new TaskSchedulerImpl(tasks, mockedTaskService(task))
+        semaphore           <- Semaphore[IO](2)
+        testedImplementation = new TaskSchedulerImpl(tasks, semaphore, mockedTaskService(task), mockedTaskRunner)
         cancellationResult  <- testedImplementation.cancelTask(taskId)
       } yield cancellationResult shouldBe Option[CancellationResult](CancellationResult.Canceled)
     }
@@ -76,7 +86,7 @@ class TaskSchedulerImplTest extends AsyncFunSpec with Matchers {
         new TaskService[IO] {
           override def getTasks: IO[Iterable[TaskId]]                                 = IO(Iterable.single(task.taskId))
           override def getTask(taskId: TaskId): IO[Option[Task]]                      = IO(Option(task))
-          override def updateTask(taskId: TaskId, state: TaskState): IO[Option[Task]] = IO(Option.empty[Task])
+          override def updateTask(taskId: TaskId, state: TaskState): IO[Option[Task]] = IO.pure(Option.empty[Task])
           override def getStats(taskId: TaskId): IO[Option[StatsFlow]]                = IO(Option.empty[StatsFlow])
         }
 
@@ -87,7 +97,8 @@ class TaskSchedulerImplTest extends AsyncFunSpec with Matchers {
         taskId              <- TaskIdComp.create
         task                 = Task(taskId, Uri(""), TaskState.Done, None, new Date(), None, None)
         tasks               <- Ref[IO].of(Map.empty[TaskId, Task])
-        testedImplementation = new TaskSchedulerImpl(tasks, mockedTaskService(task))
+        semaphore           <- Semaphore[IO](2)
+        testedImplementation = new TaskSchedulerImpl(tasks, semaphore, mockedTaskService(task), mockedTaskRunner)
         cancellationResult  <- testedImplementation.cancelTask(taskId)
       } yield cancellationResult shouldBe Option[CancellationResult](
         CancellationResult.NotCanceled(expectedError(task))
