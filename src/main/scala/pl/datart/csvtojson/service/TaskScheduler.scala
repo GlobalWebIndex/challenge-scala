@@ -1,6 +1,5 @@
 package pl.datart.csvtojson.service
 
-import akka.actor.Cancellable
 import akka.http.scaladsl.model.Uri
 import cats.effect.Ref
 import cats.effect.kernel.Async
@@ -8,6 +7,7 @@ import cats.syntax.flatMap._
 import cats.syntax.functor._
 import pl.datart.csvtojson.model.TaskState._
 import pl.datart.csvtojson.model._
+import pl.datart.csvtojson.util.Cancellable
 
 import java.util.Date
 
@@ -16,6 +16,7 @@ trait TaskScheduler[F[_]] {
   def cancelTask(taskId: TaskId): F[Option[CancellationResult]]
 }
 
+@SuppressWarnings(Array("org.wartremover.warts.Any"))
 class TaskSchedulerImpl[F[_]](tasks: Ref[F, Map[TaskId, Task]], taskService: TaskService[F])(implicit async: Async[F])
     extends TaskScheduler[F] {
   override def schedule(rawUri: RawUri): F[TaskId] = {
@@ -60,7 +61,7 @@ class TaskSchedulerImpl[F[_]](tasks: Ref[F, Map[TaskId, Task]], taskService: Tas
     }
   }
 
-  private def cancel(cancelable: Option[Cancellable]): F[Unit] = {
-    cancelable.fold(async.unit)(cancelable => async.pure(cancelable.cancel()).map(_ => (())))
+  private def cancel(cancelable: Option[Cancellable[Any]]): F[Unit] = {
+    cancelable.fold(async.unit)(cancelable => async.pure(cancelable.cancel).map(_ => (())))
   }
 }

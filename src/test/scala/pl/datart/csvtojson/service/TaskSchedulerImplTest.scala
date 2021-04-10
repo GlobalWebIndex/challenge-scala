@@ -1,11 +1,12 @@
 package pl.datart.csvtojson.service
 
-import akka.actor.Cancellable
 import akka.http.scaladsl.model.Uri
 import cats.effect._
 import org.scalatest.funspec._
 import org.scalatest.matchers.should.Matchers
 import pl.datart.csvtojson.model._
+import pl.datart.csvtojson.service.TaskService.StatsFlow
+import pl.datart.csvtojson.util.Cancellable
 import pl.datart.csvtojson.util.FAdapter.FAdapterIOFGlobal.adapter._
 
 import java.util.Date
@@ -18,8 +19,10 @@ class TaskSchedulerImplTest extends AsyncFunSpec with Matchers {
   describe("schedule") {
     it("schedules task to be done") {
       val mockedTaskService = new TaskService[IO] {
-        override def getTasks: IO[Iterable[TaskId]]            = IO(Iterable.empty[TaskId])
-        override def getTask(taskId: TaskId): IO[Option[Task]] = IO(Option.empty[Task])
+        override def getTasks: IO[Iterable[TaskId]]                                 = IO(Iterable.empty[TaskId])
+        override def getTask(taskId: TaskId): IO[Option[Task]]                      = IO(Option.empty[Task])
+        override def updateTask(taskId: TaskId, state: TaskState): IO[Option[Task]] = IO(Option.empty[Task])
+        override def getStats(taskId: TaskId): IO[Option[StatsFlow]]                = IO(Option.empty[StatsFlow])
       }
 
       for {
@@ -34,8 +37,10 @@ class TaskSchedulerImplTest extends AsyncFunSpec with Matchers {
   describe("cancel") {
     it("returns empty cancellation result if there is no such a task to cancel") {
       val mockedTaskService = new TaskService[IO] {
-        override def getTasks: IO[Iterable[TaskId]]            = IO(Iterable.empty[TaskId])
-        override def getTask(taskId: TaskId): IO[Option[Task]] = IO(Option.empty[Task])
+        override def getTasks: IO[Iterable[TaskId]]                                 = IO(Iterable.empty[TaskId])
+        override def getTask(taskId: TaskId): IO[Option[Task]]                      = IO(Option.empty[Task])
+        override def updateTask(taskId: TaskId, state: TaskState): IO[Option[Task]] = IO(Option.empty[Task])
+        override def getStats(taskId: TaskId): IO[Option[StatsFlow]]                = IO(Option.empty[StatsFlow])
       }
 
       for {
@@ -49,16 +54,13 @@ class TaskSchedulerImplTest extends AsyncFunSpec with Matchers {
     it("returns nonempty cancellation success result if there is such a task in a valid state") {
       def mockedTaskService(task: Task): TaskService[IO] =
         new TaskService[IO] {
-          override def getTasks: IO[Iterable[TaskId]]            = IO(Iterable.single(task.taskId))
-          override def getTask(taskId: TaskId): IO[Option[Task]] = IO(Option(task))
+          override def getTasks: IO[Iterable[TaskId]]                                 = IO(Iterable.single(task.taskId))
+          override def getTask(taskId: TaskId): IO[Option[Task]]                      = IO(Option(task))
+          override def updateTask(taskId: TaskId, state: TaskState): IO[Option[Task]] = IO(Option.empty[Task])
+          override def getStats(taskId: TaskId): IO[Option[StatsFlow]]                = IO(Option.empty[StatsFlow])
         }
 
-      val mockedCancellable = Option {
-        new Cancellable {
-          override def cancel(): Boolean    = true
-          override def isCancelled: Boolean = true
-        }
-      }
+      val mockedCancellable = Option.empty[Cancellable[Any]]
 
       for {
         taskId              <- TaskIdComp.create
@@ -72,8 +74,10 @@ class TaskSchedulerImplTest extends AsyncFunSpec with Matchers {
     it("returns nonempty cancellation failure result if there is such a task in a terminal state") {
       def mockedTaskService(task: Task): TaskService[IO] =
         new TaskService[IO] {
-          override def getTasks: IO[Iterable[TaskId]]            = IO(Iterable.single(task.taskId))
-          override def getTask(taskId: TaskId): IO[Option[Task]] = IO(Option(task))
+          override def getTasks: IO[Iterable[TaskId]]                                 = IO(Iterable.single(task.taskId))
+          override def getTask(taskId: TaskId): IO[Option[Task]]                      = IO(Option(task))
+          override def updateTask(taskId: TaskId, state: TaskState): IO[Option[Task]] = IO(Option.empty[Task])
+          override def getStats(taskId: TaskId): IO[Option[StatsFlow]]                = IO(Option.empty[StatsFlow])
         }
 
       def expectedError(task: Task): String =
