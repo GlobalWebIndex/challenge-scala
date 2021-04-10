@@ -24,7 +24,7 @@ object Main {
   def main(args: Array[String]): Unit = {
     val binding = for {
       tasks       <- Ref[IO].of(Map.empty[TaskId, Task])
-      tasksService = new TaskServiceImpl[IO](tasks)
+      tasksService = new TaskServiceImpl[IO](tasks, StatsComposerImpl)
       taskEnqueuer = new TaskSchedulerImpl[IO](tasks, tasksService)
       httpRoutes   = new HttpRoutes(taskEnqueuer, tasksService)
       binding     <- IO.fromFuture {

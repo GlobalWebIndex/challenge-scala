@@ -71,7 +71,7 @@ val csvToJson = Project(id = projectName, base = file("."))
   )
   .configs(ItTest)
 
-wartremoverErrors ++= Warts.all
+wartremoverErrors ++= Warts.allBut(Wart.Any)
 coverageEnabled := true
 coverageMinimum := 80
 coverageFailOnMinimum := true

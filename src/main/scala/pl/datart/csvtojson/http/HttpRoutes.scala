@@ -51,21 +51,31 @@ class HttpRoutes[F[_]](taskEnqueuer: TaskScheduler[F], taskService: TaskService[
       } ~
         path(JavaUUID) { uuid: UUID =>
           pathEndOrSingleSlash {
-            delete {
-              onComplete(taskEnqueuer.cancelTask(TaskId(uuid.toString)).adapt) {
-                case Failure(ex)                            =>
-                  complete(HttpResponse(BadRequest, entity = ex.getMessage))
-                case scala.util.Success(cancellationResult) =>
-                  cancellationResult match {
-                    case Some(CancellationResult.Canceled)            =>
-                      complete(OK)
-                    case Some(CancellationResult.NotCanceled(reason)) =>
-                      complete(BadRequest, reason)
-                    case _                                            =>
-                      complete(NotFound)
-                  }
+            get {
+              onComplete(taskService.getStats(TaskId(uuid.toString)).adapt) {
+                case Failure(ex)                         =>
+                  complete(HttpResponse(InternalServerError, entity = ex.getMessage))
+                case scala.util.Success(Some(taskStats)) =>
+                  handleWebSocketMessages(taskStats)
+                case _                                   =>
+                  complete(NotFound)
               }
-            }
+            } ~
+              delete {
+                onComplete(taskEnqueuer.cancelTask(TaskId(uuid.toString)).adapt) {
+                  case Failure(ex)                            =>
+                    complete(HttpResponse(BadRequest, entity = ex.getMessage))
+                  case scala.util.Success(cancellationResult) =>
+                    cancellationResult match {
+                      case Some(CancellationResult.Canceled)            =>
+                        complete(OK)
+                      case Some(CancellationResult.NotCanceled(reason)) =>
+                        complete(BadRequest, reason)
+                      case _                                            =>
+                        complete(NotFound)
+                    }
+                }
+              }
           }
         }
     } ~

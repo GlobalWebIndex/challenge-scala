@@ -1,22 +1,21 @@
-package pl.datart.csvtojson.http
+package pl.datart.http
 
 import akka.http.scaladsl.model.StatusCodes._
-import akka.http.scaladsl.model.ws.{Message, TextMessage}
 import akka.http.scaladsl.testkit._
-import akka.stream.scaladsl._
 import better.files.File
 import cats.effect.IO
 import org.scalatest.funspec._
 import org.scalatest.matchers.should._
+import pl.datart.csvtojson.http._
 import pl.datart.csvtojson.model._
 import pl.datart.csvtojson.service.TaskService.StatsFlow
 import pl.datart.csvtojson.service._
 import pl.datart.csvtojson.util.FAdapter.FAdapterIOFGlobal._
 
-import scala.jdk.CollectionConverters._
 import java.nio.file.Paths
 import java.nio.file.attribute.PosixFilePermissions
 import java.util.UUID
+import scala.jdk.CollectionConverters._
 
 class HttpRoutesTest extends AsyncFunSpec with Matchers with ScalatestRouteTest {
 
@@ -28,49 +27,12 @@ class HttpRoutesTest extends AsyncFunSpec with Matchers with ScalatestRouteTest 
   private val mockedTaskService = new TaskService[IO] {
     override def getTasks: IO[Iterable[TaskId]]                                 = IO.pure(Iterable.empty[TaskId])
     override def getTask(taskId: TaskId): IO[Option[Task]]                      = IO.pure(Option.empty[Task])
-    override def updateTask(taskId: TaskId, state: TaskState): IO[Option[Task]] = IO(Option.empty[Task])
+    override def updateTask(taskId: TaskId, state: TaskState): IO[Option[Task]] = IO.pure(Option.empty[Task])
     override def getStats(taskId: TaskId): IO[Option[StatsFlow]]                = IO(Option.empty[StatsFlow])
+
   }
 
   describe("routes") {
-    it("should return stats for existing task") {
-      val uuid                 = UUID.randomUUID()
-      val expectedStatsMessage = "Some stats"
-      val mockedFlow           = Flow.fromSinkAndSource(
-        Sink.head[Message],
-        Source.fromIterator(() => {
-          List(TextMessage(expectedStatsMessage)).iterator
-        })
-      )
-
-      val wsClient = WSProbe()
-
-      val mockedTaskService                    = new TaskService[IO] {
-        override def getTasks: IO[Iterable[TaskId]]                                 = IO.pure(Iterable.empty[TaskId])
-        override def getTask(taskId: TaskId): IO[Option[Task]]                      = IO.pure(Option.empty[Task])
-        override def updateTask(taskId: TaskId, state: TaskState): IO[Option[Task]] = IO(Option.empty[Task])
-        override def getStats(taskId: TaskId): IO[Option[StatsFlow]]                = IO(Option(mockedFlow))
-      }
-      val testedImplementation: HttpRoutes[IO] = new HttpRoutes(mockedTaskScheduler, mockedTaskService)(adapter)
-      WS(s"/task/${uuid.toString}", wsClient.flow) ~> testedImplementation.routes ~> check {
-
-        wsClient.sendMessage("Ignored")
-        wsClient.expectMessage(expectedStatsMessage)
-        wsClient.sendCompletion()
-        wsClient.expectCompletion()
-
-        isWebSocketUpgrade shouldEqual true
-      }
-    }
-
-    it("should return not found for not existing task") {
-      val uuid                                 = UUID.randomUUID()
-      val testedImplementation: HttpRoutes[IO] = new HttpRoutes(mockedTaskScheduler, mockedTaskService)(adapter)
-      Get(s"/task/${uuid.toString}") ~> testedImplementation.routes ~> check {
-        response.status shouldBe NotFound
-      }
-    }
-
     it("should return result file if it exists") {
       val fileContent = s"""[{"a":1,"b":2},{"a":3,"b":4}]"""
       val uuid        = UUID.randomUUID()
@@ -100,15 +62,6 @@ class HttpRoutesTest extends AsyncFunSpec with Matchers with ScalatestRouteTest 
 
       val testedImplementation: HttpRoutes[IO] = new HttpRoutes(mockedTaskScheduler, mockedTaskService)(adapter)
       Get(s"/file/${uuid.toString}") ~> testedImplementation.routes ~> check {
-        response.status shouldBe NotFound
-      }
-    }
-
-    it("should return not found for non-existing task cancellation") {
-      val uuid = UUID.randomUUID()
-
-      val testedImplementation: HttpRoutes[IO] = new HttpRoutes(mockedTaskScheduler, mockedTaskService)(adapter)
-      Delete(s"/task/${uuid.toString}") ~> testedImplementation.routes ~> check {
         response.status shouldBe NotFound
       }
     }
