@@ -28,7 +28,7 @@ class StatsComposerImplTest extends AsyncFunSpec with Matchers {
       )
       for {
         taskId <- create[IO]
-        task   <- Task(taskId, Uri(""), TaskState.Running, None, date, Option(date), None).pure[IO]
+        task   <- Task(taskId, Uri(""), TaskState.Running, Option(date), None).pure[IO]
         _      <- IO.unit.delayBy(2.seconds)
         report <- testedImplementation.createReport(task).pure[IO]
       } yield report shouldBe expectedStats
@@ -46,7 +46,7 @@ class StatsComposerImplTest extends AsyncFunSpec with Matchers {
                            result = Option(s"/file/${taskId.taskId}")
                          ).pure[IO]
         _             <- IO.unit.delayBy(2.seconds)
-        task          <- Task(taskId, Uri(""), TaskState.Done, None, date, Option(date), Option(new Date())).pure[IO]
+        task          <- Task(taskId, Uri(""), TaskState.Done, Option(date), Option(new Date())).pure[IO]
         report        <- testedImplementation.createReport(task).pure[IO]
       } yield report shouldBe expectedStats
     }

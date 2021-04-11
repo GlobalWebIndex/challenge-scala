@@ -82,16 +82,22 @@ class HttpRoutes[F[_]](taskEnqueuer: TaskScheduler[F], taskService: TaskService[
       path("file" / JavaUUID) { uuid: UUID =>
         pathEndOrSingleSlash {
           get {
-            val file = File(Paths.get(System.getProperty("java.io.tmpdir"))) / s"${uuid.toString}.json"
-            if (!file.exists) {
-              complete(NotFound)
-            } else if (!file.isReadable) {
-              complete(InternalServerError, "Result file not readable.")
-            } else {
-              val fileSource = Source
-                .fromIterator(() => file.lineIterator)
-                .map(ChunkStreamPart(_))
-              complete(HttpResponse(entity = Chunked(ContentTypes.`application/json`, fileSource)))
+            onSuccess(taskService.getTask(TaskId(uuid.toString)).adapt) { taskOption =>
+              taskOption.fold(complete(NotFound)) { task =>
+                val file = File(Paths.get(System.getProperty("java.io.tmpdir"))) / s"${uuid.toString}.json"
+                if (task.isInProgress) {
+                  complete(TooEarly, "Scheduled or running. Please wait for the completion.")
+                } else if (task.isCanceledOrFailed) {
+                  complete(BadRequest, "Task canceled or failed.")
+                } else if (!file.exists || !file.isReadable) {
+                  complete(InternalServerError, "Result file does not exist or is not readable.")
+                } else {
+                  val fileSource = Source
+                    .fromIterator(() => file.lineIterator)
+                    .map(ChunkStreamPart(_))
+                  complete(HttpResponse(entity = Chunked(ContentTypes.`application/json`, fileSource)))
+                }
+              }
             }
           }
         }

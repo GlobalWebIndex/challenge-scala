@@ -14,7 +14,6 @@ import pl.datart.csvtojson.util.FAdapter
 import pl.datart.csvtojson.util.FAdapter.FAdapterIOFGlobal.adapter
 import pl.datart.csvtojson.util.FAdapter.FAdapterIOFGlobal.adapter._
 
-import java.util.Date
 import scala.concurrent.Future
 
 @SuppressWarnings(Array("org.wartremover.warts.Any", "org.wartremover.warts.Nothing"))
@@ -23,6 +22,19 @@ class TaskServiceImplTest extends AsyncFunSpec with Matchers {
   private implicit val async: Async[IO]               = IO.asyncForIO
   private implicit val actorSystem: ActorSystem       = ActorSystem("test-task-service-as")
   private implicit val fAdapter: FAdapter[IO, Future] = adapter
+
+  describe("addTask") {
+    it("adds new task") {
+      for {
+        tasks               <- Ref[IO].of(Map.empty[TaskId, Task])
+        testedImplementation = new TaskServiceImpl(tasks, StatsComposerImpl)
+        taskId              <- TaskIdComp.create
+        task                 = Task(taskId, Uri(""), TaskState.Scheduled, None, None)
+        _                   <- testedImplementation.addTask(task)
+        fetchedTasks        <- testedImplementation.getTasks
+      } yield fetchedTasks shouldBe Set(taskId)
+    }
+  }
 
   describe("getTasks") {
     it("returns empty collection of tasks if there aren't any of them") {
@@ -36,7 +48,7 @@ class TaskServiceImplTest extends AsyncFunSpec with Matchers {
     it("returns nonempty collection of tasks if there some of them") {
       for {
         taskId              <- TaskIdComp.create
-        task                 = Task(taskId, Uri(""), TaskState.Scheduled, None, new Date(), None, None)
+        task                 = Task(taskId, Uri(""), TaskState.Scheduled, None, None)
         tasks               <- Ref[IO].of(Map[TaskId, Task](taskId -> task))
         testedImplementation = new TaskServiceImpl(tasks, StatsComposerImpl)
         fetchedTasks        <- testedImplementation.getTasks
@@ -57,7 +69,7 @@ class TaskServiceImplTest extends AsyncFunSpec with Matchers {
     it("returns nonempty result of matching task for a given task id") {
       for {
         taskId              <- TaskIdComp.create
-        task                 = Task(taskId, Uri(""), TaskState.Scheduled, None, new Date(), None, None)
+        task                 = Task(taskId, Uri(""), TaskState.Scheduled, None, None)
         tasks               <- Ref[IO].of(Map[TaskId, Task](taskId -> task))
         testedImplementation = new TaskServiceImpl(tasks, StatsComposerImpl)
         fetchedTask         <- testedImplementation.getTask(taskId)
@@ -73,8 +85,6 @@ class TaskServiceImplTest extends AsyncFunSpec with Matchers {
                                  taskId = taskId,
                                  uri = Uri(""),
                                  state = TaskState.Scheduled,
-                                 cancelable = None,
-                                 scheduleTime = new Date(),
                                  startTime = None,
                                  endTime = None
                                )
@@ -119,8 +129,6 @@ class TaskServiceImplTest extends AsyncFunSpec with Matchers {
                                  taskId = taskId,
                                  uri = Uri(""),
                                  state = TaskState.Scheduled,
-                                 cancelable = None,
-                                 scheduleTime = new Date(),
                                  startTime = None,
                                  endTime = None
                                )
