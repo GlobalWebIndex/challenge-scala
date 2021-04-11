@@ -29,7 +29,7 @@ object Main {
         semaphore    <- Semaphore[IO](2)
         tasksService  = new TaskServiceImpl[IO](tasks, StatsComposerImpl)
         taskRunner    = new TaskRunnerImpl[IO](tasksService, semaphore)(IO.asyncForIO)
-        taskScheduler = new TaskSchedulerImpl[IO](tasks, semaphore, tasksService, taskRunner)(
+        taskScheduler = new TaskSchedulerImpl[IO](tasksService, taskRunner)(
                           IO.asyncForIO,
                           system.getDispatcher
                         )

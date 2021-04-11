@@ -1,6 +1,7 @@
 package pl.datart.csvtojson.http
 
 import akka.http.scaladsl.model.StatusCodes._
+import akka.http.scaladsl.model.Uri
 import akka.http.scaladsl.model.ws.{Message, TextMessage}
 import akka.http.scaladsl.testkit._
 import akka.stream.scaladsl._
@@ -26,6 +27,7 @@ class HttpRoutesTest extends AsyncFunSpec with Matchers with ScalatestRouteTest 
   }
 
   private val mockedTaskService = new TaskService[IO] {
+    override def addTask(task: Task): IO[Unit]                                  = IO.unit
     override def getTasks: IO[Iterable[TaskId]]                                 = IO.pure(Iterable.empty[TaskId])
     override def getTask(taskId: TaskId): IO[Option[Task]]                      = IO.pure(Option.empty[Task])
     override def updateTask(taskId: TaskId, state: TaskState): IO[Option[Task]] = IO.pure(Option.empty[Task])
@@ -46,6 +48,7 @@ class HttpRoutesTest extends AsyncFunSpec with Matchers with ScalatestRouteTest 
       val wsClient = WSProbe()
 
       val mockedTaskService                    = new TaskService[IO] {
+        override def addTask(task: Task): IO[Unit]                                  = IO.unit
         override def getTasks: IO[Iterable[TaskId]]                                 = IO.pure(Iterable.empty[TaskId])
         override def getTask(taskId: TaskId): IO[Option[Task]]                      = IO.pure(Option.empty[Task])
         override def updateTask(taskId: TaskId, state: TaskState): IO[Option[Task]] = IO(Option.empty[Task])
@@ -76,6 +79,15 @@ class HttpRoutesTest extends AsyncFunSpec with Matchers with ScalatestRouteTest 
       val uuid        = UUID.randomUUID()
       val testFile    = File(Paths.get(System.getProperty("java.io.tmpdir"))) / s"${uuid.toString}.json"
       testFile.createFile().appendLine(fileContent)
+      val task        = Task(TaskId(uuid.toString), Uri(""), TaskState.Done, None, None)
+
+      val mockedTaskService = new TaskService[IO] {
+        override def addTask(task: Task): IO[Unit]                                  = IO.unit
+        override def getTasks: IO[Iterable[TaskId]]                                 = IO.pure(Iterable.empty[TaskId])
+        override def getTask(taskId: TaskId): IO[Option[Task]]                      = IO.pure(Option(task))
+        override def updateTask(taskId: TaskId, state: TaskState): IO[Option[Task]] = IO.pure(Option.empty[Task])
+        override def getStats(taskId: TaskId): IO[Option[StatsFlow]]                = IO(Option.empty[StatsFlow])
+      }
 
       val testedImplementation: HttpRoutes[IO] = new HttpRoutes(mockedTaskScheduler, mockedTaskService)(adapter)
       Get(s"/file/${uuid.toString}") ~> testedImplementation.routes ~> check {
@@ -88,6 +100,16 @@ class HttpRoutesTest extends AsyncFunSpec with Matchers with ScalatestRouteTest 
       val _    = (File(Paths.get(System.getProperty("java.io.tmpdir"))) / s"${uuid.toString}.json")
         .createFile()
         .setPermissions(PosixFilePermissions.fromString("-wx-wx---").asScala.toSet)
+
+      val task = Task(TaskId(uuid.toString), Uri(""), TaskState.Done, None, None)
+
+      val mockedTaskService = new TaskService[IO] {
+        override def addTask(task: Task): IO[Unit]                                  = IO.unit
+        override def getTasks: IO[Iterable[TaskId]]                                 = IO.pure(Iterable.empty[TaskId])
+        override def getTask(taskId: TaskId): IO[Option[Task]]                      = IO.pure(Option(task))
+        override def updateTask(taskId: TaskId, state: TaskState): IO[Option[Task]] = IO.pure(Option.empty[Task])
+        override def getStats(taskId: TaskId): IO[Option[StatsFlow]]                = IO(Option.empty[StatsFlow])
+      }
 
       val testedImplementation: HttpRoutes[IO] = new HttpRoutes(mockedTaskScheduler, mockedTaskService)(adapter)
       Get(s"/file/${uuid.toString}") ~> testedImplementation.routes ~> check {

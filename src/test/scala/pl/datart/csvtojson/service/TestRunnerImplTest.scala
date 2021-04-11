@@ -6,7 +6,6 @@ import cats.syntax.all._
 import cats.effect.IO
 import cats.effect.kernel.Async
 import cats.effect.std.Semaphore
-import fs2.concurrent.SignallingRef
 import org.scalatest.funspec.AsyncFunSpec
 import org.scalatest.matchers.should.Matchers
 import pl.datart.csvtojson.model._
@@ -21,19 +20,21 @@ class TestRunnerImplTest extends AsyncFunSpec with Matchers {
   private implicit val asyncIO: Async[IO] = IO.asyncForIO
   describe("run") {
     it("should run correctly the task") {
-      val mockedTaskService: TaskService[IO] = new TaskService[IO] {
-        override def getTasks: IO[Iterable[TaskId]]                                 = IO(Iterable.empty[TaskId])
-        override def getTask(taskId: TaskId): IO[Option[Task]]                      = IO(Option.empty[Task])
-        override def updateTask(taskId: TaskId, state: TaskState): IO[Option[Task]] = IO.pure(Option.empty[Task])
-        override def getStats(taskId: TaskId): IO[Option[StatsFlow]]                = IO(None)
-      }
+      def mockedTaskService(task: Task): TaskService[IO] =
+        new TaskService[IO] {
+          override def addTask(task: Task): IO[Unit]                                  = IO.unit
+          override def getTasks: IO[Iterable[TaskId]]                                 = IO(Iterable.empty[TaskId])
+          override def getTask(taskId: TaskId): IO[Option[Task]]                      = IO(Option(task))
+          override def updateTask(taskId: TaskId, state: TaskState): IO[Option[Task]] = IO.pure(Option.empty[Task])
+          override def getStats(taskId: TaskId): IO[Option[StatsFlow]]                = IO(None)
+        }
       for {
         semaphore <- Semaphore[IO](2)
-        signal              <- SignallingRef[IO, Boolean](false)
         taskId              <- TaskId(UUID.randomUUID().toString).pure[IO]
         uri                 <- Uri(s"file://${Source.getClass.getResource("/example_file.csv").getPath}").pure[IO]
-        testedImplementation = new TaskRunnerImpl[IO](mockedTaskService, semaphore)
-        _                   <- testedImplementation.run(taskId, uri, signal)
+        task                <- Task(taskId, uri, TaskState.Scheduled, None, None).pure[IO]
+        testedImplementation = new TaskRunnerImpl[IO](mockedTaskService(task), semaphore)
+        _                   <- testedImplementation.run(taskId, uri)
         outputFile          <- (File(Paths.get(System.getProperty("java.io.tmpdir"))) / s"${taskId.taskId}.json").pure[IO]
       } yield outputFile.contentAsString shouldBe
         s"""[

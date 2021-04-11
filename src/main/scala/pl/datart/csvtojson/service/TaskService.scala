@@ -19,6 +19,7 @@ import pl.datart.csvtojson.util.FAdapter
 import pl.datart.csvtojson.util.FAdapter._
 
 trait TaskService[F[_]] {
+  def addTask(task: Task): F[Unit]
   def getTasks: F[Iterable[TaskId]]
   def getTask(taskId: TaskId): F[Option[Task]]
   def updateTask(taskId: TaskId, state: TaskState): F[Option[Task]]
@@ -37,6 +38,10 @@ class TaskServiceImpl[F[_]](tasks: Ref[F, Map[TaskId, Task]], statsComposer: Sta
     fAdapter: FAdapter[F, Future],
     materializer: Materializer
 ) extends TaskService[F] {
+  override def addTask(task: Task): F[Unit] = {
+    tasks.update(_ + (task.taskId -> task))
+  }
+
   override def getTasks: F[Iterable[TaskId]] = {
     tasks.get.map(_.keys)
   }
@@ -52,11 +57,11 @@ class TaskServiceImpl[F[_]](tasks: Ref[F, Map[TaskId, Task]], statsComposer: Sta
           case TaskState.Running  =>
             task.copy(state = TaskState.Running, startTime = Option(new Date()))
           case TaskState.Canceled =>
-            task.copy(state = TaskState.Canceled, cancelable = None)
+            task.copy(state = TaskState.Canceled)
           case TaskState.Done     =>
-            task.copy(state = TaskState.Done, cancelable = None, endTime = Option(new Date()))
+            task.copy(state = TaskState.Done, endTime = Option(new Date()))
           case TaskState.Failed   =>
-            task.copy(state = TaskState.Failed, cancelable = None)
+            task.copy(state = TaskState.Failed)
           case _                  => task
         }
 
