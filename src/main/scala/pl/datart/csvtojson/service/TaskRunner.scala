@@ -33,20 +33,25 @@ class TaskRunnerImpl[F[_]](taskService: TaskService[F], semaphore: Semaphore[F])
   }
 
   private def getAndSave(taskId: TaskId, uri: Uri): F[Unit] = {
-    for {
-      _          <- semaphore.acquire
-      taskOption <- taskService.getTask(taskId)
-      _          <- taskOption.fold(semaphore.release) { task =>
-                      task.state match {
-                        case TaskState.Scheduled =>
-                          taskService
-                            .updateTask(taskId, TaskState.Running)
-                            .flatMap(_ => prepareStream(taskId, uri).drain)
-                        case _                   =>
-                          semaphore.release
+    {
+      for {
+        _          <- semaphore.acquire
+        taskOption <- taskService.getTask(taskId)
+        _          <- taskOption.traverse { task =>
+                        task.state match {
+                          case TaskState.Scheduled =>
+                            taskService
+                              .updateTask(taskId, TaskState.Running)
+                              .flatMap(_ => prepareStream(taskId, uri).drain)
+                          case _                   =>
+                            async.unit
+                        }
                       }
-                    }
-    } yield ()
+        _          <- semaphore.release
+      } yield ()
+    }.onError {
+      case _ => semaphore.release
+    }
   }
 
   private def prepareStream(taskId: TaskId, uri: Uri) = {
@@ -103,14 +108,12 @@ class TaskRunnerImpl[F[_]](taskService: TaskService[F], semaphore: Semaphore[F])
                         case _                                     => async.unit
                       }
                     }
-      _          <- semaphore.release
     } yield ()
   }
 
   private def ceFinalizer(taskId: TaskId, outputFile: File, state: TaskState) = {
     taskService
       .updateTask(taskId, state)
-      .flatMap(_ => semaphore.release)
       .flatMap(_ => outputFile.delete(swallowIOExceptions = true).pure.map(_ => (())))
   }
 

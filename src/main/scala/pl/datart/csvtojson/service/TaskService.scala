@@ -2,14 +2,12 @@ package pl.datart.csvtojson.service
 
 import akka._
 import akka.http.scaladsl.model.ws._
-import akka.stream._
 import akka.stream.scaladsl._
 import cats.effect._
-import cats.syntax.flatMap._
-import cats.syntax.functor._
+import cats.syntax.all._
 import pl.datart.csvtojson.model.JsonFormats._
 import pl.datart.csvtojson.model._
-import pl.datart.csvtojson.service.TaskService.StatsFlow
+import pl.datart.csvtojson.service.TaskService.StatsSource
 import spray.json._
 
 import java.util.Date
@@ -23,11 +21,11 @@ trait TaskService[F[_]] {
   def getTasks: F[Iterable[TaskId]]
   def getTask(taskId: TaskId): F[Option[Task]]
   def updateTask(taskId: TaskId, state: TaskState): F[Option[Task]]
-  def getStats(taskId: TaskId): F[Option[StatsFlow]]
+  def getStats(taskId: TaskId): F[Option[StatsSource]]
 }
 
 object TaskService {
-  type StatsFlow = Flow[Message, Message, _]
+  type StatsSource = Source[Message, _]
 }
 
 @SuppressWarnings(
@@ -35,8 +33,7 @@ object TaskService {
 )
 class TaskServiceImpl[F[_]](tasks: Ref[F, Map[TaskId, Task]], statsComposer: StatsComposer)(implicit
     async: Async[F],
-    fAdapter: FAdapter[F, Future],
-    materializer: Materializer
+    fAdapter: FAdapter[F, Future]
 ) extends TaskService[F] {
   override def addTask(task: Task): F[Unit] = {
     tasks.update(_ + (task.taskId -> task))
@@ -70,32 +67,20 @@ class TaskServiceImpl[F[_]](tasks: Ref[F, Map[TaskId, Task]], statsComposer: Sta
     }
   }
 
-  override def getStats(taskId: TaskId): F[Option[StatsFlow]] = {
+  override def getStats(taskId: TaskId): F[Option[StatsSource]] = {
     getTask(taskId).flatMap { taskOption =>
-      taskOption.fold(async.pure(Option.empty[StatsFlow])) { _ =>
-        val taskStats = {
-          val source = Source
-            .tick(2.seconds, 2.seconds, NotUsed)
-            .mapAsync(parallelism = 1)(_ => getTask(taskId).adapt)
-            .collect {
-              case Some(t) => t
-            }
-            .takeWhile(!_.isInTerminal, inclusive = true)
-            .map(currentStats)
-            .map(TextMessage(_))
+      taskOption.traverse { _ =>
+        val source = Source
+          .tick(2.seconds, 2.seconds, NotUsed)
+          .mapAsync(parallelism = 1)(_ => getTask(taskId).adapt)
+          .collect {
+            case Some(t) => t
+          }
+          .takeWhile(!_.isInTerminal, inclusive = true)
+          .map(currentStats)
+          .map(TextMessage(_))
 
-          val sink = Flow[Message]
-            .mapConcat {
-              case binaryMessage: BinaryMessage =>
-                binaryMessage.dataStream.runWith(Sink.ignore)(materializer)
-                Nil
-              case _                            => Nil
-            }
-            .to(Sink.ignore)
-
-          Flow.fromSinkAndSource(sink, source)
-        }
-        async.pure(Option(taskStats))
+        async.pure(source)
       }
     }
   }

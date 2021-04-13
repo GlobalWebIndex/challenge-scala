@@ -2,14 +2,13 @@ package pl.datart.csvtojson.service
 
 import akka.actor.ActorSystem
 import akka.http.scaladsl.model.Uri
-import akka.http.scaladsl.model.ws.{BinaryMessage, Message, TextMessage}
-import akka.stream.scaladsl.{Sink, Source}
-import akka.util.ByteString
+import akka.http.scaladsl.model.ws._
+import akka.stream.scaladsl._
 import cats.effect._
 import org.scalatest.funspec.AsyncFunSpec
 import org.scalatest.matchers.should.Matchers
 import pl.datart.csvtojson.model._
-import pl.datart.csvtojson.service.TaskService.StatsFlow
+import pl.datart.csvtojson.service.TaskService.StatsSource
 import pl.datart.csvtojson.util.FAdapter
 import pl.datart.csvtojson.util.FAdapter.FAdapterIOFGlobal.adapter
 import pl.datart.csvtojson.util.FAdapter.FAdapterIOFGlobal.adapter._
@@ -136,18 +135,9 @@ class TaskServiceImplTest extends AsyncFunSpec with Matchers {
         testedImplementation = new TaskServiceImpl(tasks, StatsComposerImpl)
         tasksStats          <- testedImplementation.getStats(taskId)
         _                   <- testedImplementation.updateTask(taskId, TaskState.Canceled)
-        message             <- tasksStats.fold[IO[Message]](IO(fail()))(statsFlow => {
-                                 val incomingMessages = Source
-                                   .fromIterator(() =>
-                                     List[Message](
-                                       TextMessage("Ignored"),
-                                       BinaryMessage(ByteString("Ignored"))
-                                     ).iterator
-                                   )
-                                   .via(statsFlow)
-                                   .runWith(Sink.head)
-                                 IO.fromFuture(IO(incomingMessages))
-                               })
+        message             <- tasksStats.fold[IO[Message]](IO(fail())) { statsFlow =>
+                                 IO.fromFuture(IO(statsFlow.runWith(Sink.head)))
+                               }
       } yield message.asTextMessage.getStrictText shouldBe
         s"""{
            |  "avgLinesPerSec": 0,
@@ -162,7 +152,7 @@ class TaskServiceImplTest extends AsyncFunSpec with Matchers {
         tasks               <- Ref[IO].of(Map.empty[TaskId, Task])
         testedImplementation = new TaskServiceImpl(tasks, StatsComposerImpl)
         expectedEmpty       <- testedImplementation.getStats(taskId)
-      } yield expectedEmpty shouldBe Option.empty[StatsFlow]
+      } yield expectedEmpty shouldBe Option.empty[StatsSource]
     }
   }
 }

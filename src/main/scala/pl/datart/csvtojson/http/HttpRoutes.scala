@@ -4,12 +4,15 @@ import akka.http.scaladsl.marshallers.sprayjson.SprayJsonSupport._
 import akka.http.scaladsl.model.HttpEntity._
 import akka.http.scaladsl.model.StatusCodes._
 import akka.http.scaladsl.model._
+import akka.http.scaladsl.model.ws._
 import akka.http.scaladsl.server.Directives._
 import akka.http.scaladsl.server.Route
-import akka.stream.scaladsl.Source
+import akka.stream.Materializer
+import akka.stream.scaladsl._
 import better.files.File
 import pl.datart.csvtojson.model.JsonFormats._
 import pl.datart.csvtojson.model._
+import pl.datart.csvtojson.service.TaskService.StatsSource
 import pl.datart.csvtojson.service._
 import pl.datart.csvtojson.util.FAdapter
 import pl.datart.csvtojson.util.FAdapter._
@@ -20,7 +23,9 @@ import java.util.UUID
 import scala.concurrent.Future
 import scala.util._
 
-@SuppressWarnings(Array("org.wartremover.warts.Any", "org.wartremover.warts.Nothing"))
+@SuppressWarnings(
+  Array("org.wartremover.warts.Any", "org.wartremover.warts.Nothing", "org.wartremover.warts.ImplicitParameter")
+)
 class HttpRoutes[F[_]](taskEnqueuer: TaskScheduler[F], taskService: TaskService[F])(implicit
     fAdapter: FAdapter[F, Future]
 ) {
@@ -52,13 +57,15 @@ class HttpRoutes[F[_]](taskEnqueuer: TaskScheduler[F], taskService: TaskService[
         path(JavaUUID) { uuid: UUID =>
           pathEndOrSingleSlash {
             get {
-              onComplete(taskService.getStats(TaskId(uuid.toString)).adapt) {
-                case Failure(ex)                         =>
-                  complete(HttpResponse(InternalServerError, entity = ex.getMessage))
-                case scala.util.Success(Some(taskStats)) =>
-                  handleWebSocketMessages(taskStats)
-                case _                                   =>
-                  complete(NotFound)
+              extractMaterializer { materializer =>
+                onComplete(taskService.getStats(TaskId(uuid.toString)).adapt) {
+                  case Failure(ex)                           =>
+                    complete(HttpResponse(InternalServerError, entity = ex.getMessage))
+                  case scala.util.Success(Some(statsSource)) =>
+                    handleWebSocketMessages(statsFlow(statsSource)(materializer))
+                  case _                                     =>
+                    complete(NotFound)
+                }
               }
             } ~
               delete {
@@ -102,4 +109,17 @@ class HttpRoutes[F[_]](taskEnqueuer: TaskScheduler[F], taskService: TaskService[
           }
         }
       }
+
+  private def statsFlow(statsSource: StatsSource)(implicit materializer: Materializer): Flow[Message, Message, _] = {
+    val sink = Flow[Message]
+      .mapConcat {
+        case binaryMessage: BinaryMessage =>
+          binaryMessage.dataStream.runWith(Sink.ignore)
+          Nil
+        case _                            => Nil
+      }
+      .to(Sink.ignore)
+
+    Flow.fromSinkAndSource(sink, statsSource)
+  }
 }

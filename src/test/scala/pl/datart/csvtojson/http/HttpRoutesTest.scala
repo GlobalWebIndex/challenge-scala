@@ -2,7 +2,7 @@ package pl.datart.csvtojson.http
 
 import akka.http.scaladsl.model.StatusCodes._
 import akka.http.scaladsl.model.Uri
-import akka.http.scaladsl.model.ws.{Message, TextMessage}
+import akka.http.scaladsl.model.ws._
 import akka.http.scaladsl.testkit._
 import akka.stream.scaladsl._
 import better.files.File
@@ -10,7 +10,7 @@ import cats.effect.IO
 import org.scalatest.funspec._
 import org.scalatest.matchers.should._
 import pl.datart.csvtojson.model._
-import pl.datart.csvtojson.service.TaskService.StatsFlow
+import pl.datart.csvtojson.service.TaskService.StatsSource
 import pl.datart.csvtojson.service._
 import pl.datart.csvtojson.util.FAdapter.FAdapterIOFGlobal._
 
@@ -31,19 +31,17 @@ class HttpRoutesTest extends AsyncFunSpec with Matchers with ScalatestRouteTest 
     override def getTasks: IO[Iterable[TaskId]]                                 = IO.pure(Iterable.empty[TaskId])
     override def getTask(taskId: TaskId): IO[Option[Task]]                      = IO.pure(Option.empty[Task])
     override def updateTask(taskId: TaskId, state: TaskState): IO[Option[Task]] = IO.pure(Option.empty[Task])
-    override def getStats(taskId: TaskId): IO[Option[StatsFlow]]                = IO(Option.empty[StatsFlow])
+    override def getStats(taskId: TaskId): IO[Option[StatsSource]]              = IO(Option.empty[StatsSource])
   }
 
   describe("routes") {
     it("should return stats for existing task") {
       val uuid                 = UUID.randomUUID()
       val expectedStatsMessage = "Some stats"
-      val mockedFlow           = Flow.fromSinkAndSource(
-        Sink.head[Message],
+      val mockedFlow           =
         Source.fromIterator(() => {
           List(TextMessage(expectedStatsMessage)).iterator
         })
-      )
 
       val wsClient = WSProbe()
 
@@ -52,7 +50,7 @@ class HttpRoutesTest extends AsyncFunSpec with Matchers with ScalatestRouteTest 
         override def getTasks: IO[Iterable[TaskId]]                                 = IO.pure(Iterable.empty[TaskId])
         override def getTask(taskId: TaskId): IO[Option[Task]]                      = IO.pure(Option.empty[Task])
         override def updateTask(taskId: TaskId, state: TaskState): IO[Option[Task]] = IO(Option.empty[Task])
-        override def getStats(taskId: TaskId): IO[Option[StatsFlow]]                = IO(Option(mockedFlow))
+        override def getStats(taskId: TaskId): IO[Option[StatsSource]]              = IO(Option(mockedFlow))
       }
       val testedImplementation: HttpRoutes[IO] = new HttpRoutes(mockedTaskScheduler, mockedTaskService)(adapter)
       WS(s"/task/${uuid.toString}", wsClient.flow) ~> testedImplementation.routes ~> check {
@@ -86,7 +84,7 @@ class HttpRoutesTest extends AsyncFunSpec with Matchers with ScalatestRouteTest 
         override def getTasks: IO[Iterable[TaskId]]                                 = IO.pure(Iterable.empty[TaskId])
         override def getTask(taskId: TaskId): IO[Option[Task]]                      = IO.pure(Option(task))
         override def updateTask(taskId: TaskId, state: TaskState): IO[Option[Task]] = IO.pure(Option.empty[Task])
-        override def getStats(taskId: TaskId): IO[Option[StatsFlow]]                = IO(Option.empty[StatsFlow])
+        override def getStats(taskId: TaskId): IO[Option[StatsSource]]              = IO(Option.empty[StatsSource])
       }
 
       val testedImplementation: HttpRoutes[IO] = new HttpRoutes(mockedTaskScheduler, mockedTaskService)(adapter)
@@ -108,7 +106,7 @@ class HttpRoutesTest extends AsyncFunSpec with Matchers with ScalatestRouteTest 
         override def getTasks: IO[Iterable[TaskId]]                                 = IO.pure(Iterable.empty[TaskId])
         override def getTask(taskId: TaskId): IO[Option[Task]]                      = IO.pure(Option(task))
         override def updateTask(taskId: TaskId, state: TaskState): IO[Option[Task]] = IO.pure(Option.empty[Task])
-        override def getStats(taskId: TaskId): IO[Option[StatsFlow]]                = IO(Option.empty[StatsFlow])
+        override def getStats(taskId: TaskId): IO[Option[StatsSource]]              = IO(Option.empty[StatsSource])
       }
 
       val testedImplementation: HttpRoutes[IO] = new HttpRoutes(mockedTaskScheduler, mockedTaskService)(adapter)

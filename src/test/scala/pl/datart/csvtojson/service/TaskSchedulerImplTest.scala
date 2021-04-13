@@ -6,7 +6,7 @@ import cats.effect._
 import org.scalatest.funspec._
 import org.scalatest.matchers.should.Matchers
 import pl.datart.csvtojson.model._
-import pl.datart.csvtojson.service.TaskService.StatsFlow
+import pl.datart.csvtojson.service.TaskService.StatsSource
 import pl.datart.csvtojson.util.FAdapter.FAdapterIOFGlobal.adapter._
 
 @SuppressWarnings(Array("org.wartremover.warts.Any", "org.wartremover.warts.Nothing"))
@@ -26,7 +26,7 @@ class TaskSchedulerImplTest extends AsyncFunSpec with Matchers {
         override def getTasks: IO[Iterable[TaskId]]                                 = IO(Iterable.empty[TaskId])
         override def getTask(taskId: TaskId): IO[Option[Task]]                      = IO(Option.empty[Task])
         override def updateTask(taskId: TaskId, state: TaskState): IO[Option[Task]] = IO.pure(Option.empty[Task])
-        override def getStats(taskId: TaskId): IO[Option[StatsFlow]]                = IO(None)
+        override def getStats(taskId: TaskId): IO[Option[StatsSource]]              = IO(None)
       }
 
       for {
@@ -43,7 +43,7 @@ class TaskSchedulerImplTest extends AsyncFunSpec with Matchers {
         override def getTasks: IO[Iterable[TaskId]]                                 = IO(Iterable.empty[TaskId])
         override def getTask(taskId: TaskId): IO[Option[Task]]                      = IO(Option.empty[Task])
         override def updateTask(taskId: TaskId, state: TaskState): IO[Option[Task]] = IO.pure(Option.empty[Task])
-        override def getStats(taskId: TaskId): IO[Option[StatsFlow]]                = IO(None)
+        override def getStats(taskId: TaskId): IO[Option[StatsSource]]              = IO(None)
       }
 
       for {
@@ -60,7 +60,7 @@ class TaskSchedulerImplTest extends AsyncFunSpec with Matchers {
           override def getTasks: IO[Iterable[TaskId]]                                 = IO(Iterable.single(task.taskId))
           override def getTask(taskId: TaskId): IO[Option[Task]]                      = IO(Option(task))
           override def updateTask(taskId: TaskId, state: TaskState): IO[Option[Task]] = IO.pure(Option.empty[Task])
-          override def getStats(taskId: TaskId): IO[Option[StatsFlow]]                = IO(None)
+          override def getStats(taskId: TaskId): IO[Option[StatsSource]]              = IO(None)
         }
       for {
         taskId <- TaskIdComp.create
@@ -77,7 +77,7 @@ class TaskSchedulerImplTest extends AsyncFunSpec with Matchers {
           override def getTasks: IO[Iterable[TaskId]]                                 = IO(Iterable.single(task.taskId))
           override def getTask(taskId: TaskId): IO[Option[Task]]                      = IO(Option(task))
           override def updateTask(taskId: TaskId, state: TaskState): IO[Option[Task]] = IO.pure(Option.empty[Task])
-          override def getStats(taskId: TaskId): IO[Option[StatsFlow]]                = IO(Option.empty[StatsFlow])
+          override def getStats(taskId: TaskId): IO[Option[StatsSource]]              = IO(Option.empty[StatsSource])
         }
 
       def expectedError(task: Task): String =
