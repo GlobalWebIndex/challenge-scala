@@ -4,16 +4,13 @@ Hello future colleague! In this assessment, we request that you implement an HTT
  
 ## Create Task 
 #### POST /task/
-Create a task with URI pointing to CSV dataset which will be converted to Json and reuturns taskId.
+Create a task with URI pointing to CSV dataset which will be converted to Json and returns taskId.
    - 2 tasks can be run at the same time
    - the task is executed immediately if `running-tasks < 2` 
 
 ## List Tasks 
 #### GET /task/
-
-## Task Detail 
-#### GET /task/[taskId]
-Return informations about the task:    
+Returns list of all created tasks. Each task should have:
 - state (`SCHEDULED/RUNNING/DONE/FAILED/CANCELED`)
 - result (uri where the JSON file can be downloaded)
 
