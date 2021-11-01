@@ -1,2 +1,18 @@
+# idea
+.idea
+*.iml
+
+# building
 *.class
 *.log
+target
+build
+null
+tmp*
+dist
+test-output
+build.log
+.bsp
+
+#mac
+.DS_Store
