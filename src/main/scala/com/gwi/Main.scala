@@ -1,5 +1,32 @@
 package com.gwi
 
-object Main extends App {
-  println("Hello, World!")
+import akka.actor.ActorSystem
+import akka.http.scaladsl.Http
+import com.gwi.route.TaskRouter
+import com.gwi.service.TaskServiceImpl
+import com.gwi.storage.InMemoryTaskStorage
+
+import scala.concurrent.ExecutionContextExecutor
+import scala.concurrent.duration.DurationInt
+
+object Main {
+
+  def main(args: Array[String]): Unit = {
+    implicit val system: ActorSystem = ActorSystem()
+    implicit val dispatcher: ExecutionContextExecutor = system.dispatcher
+
+    val host = "0.0.0.0"
+    val port = 8080
+
+    val taskStorage = new InMemoryTaskStorage()
+    val taskService = new TaskServiceImpl(taskStorage)
+    val taskRouter = new TaskRouter(taskService)
+
+    Http()
+      .newServerAt(host, port)
+      .bind(taskRouter.routes)
+      .map(_.addToCoordinatedShutdown(hardTerminationDeadline = 10.seconds))
+      .foreach(_ => println(s"Server started at $host:$port"))
+  }
+
 }
