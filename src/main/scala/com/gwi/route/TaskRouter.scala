@@ -2,7 +2,9 @@ package com.gwi.route
 
 import akka.http.scaladsl.model.StatusCodes.{BadRequest, InternalServerError, NotFound, OK}
 import akka.http.scaladsl.server.{Directives, Route}
-import com.gwi.model.{TaskCreateResponse, TaskListResponse}
+import akka.http.scaladsl.model.ContentTypes._
+import akka.http.scaladsl.model.HttpEntity
+import com.gwi.model.{TaskCreateRequest, TaskCreateResponse, TaskListResponse}
 import com.gwi.service.TaskService
 import de.heikoseeberger.akkahttpcirce.FailFastCirceSupport
 
@@ -16,13 +18,20 @@ class TaskRouter(taskService: TaskService)(implicit ec: ExecutionContext) extend
       get {
         onComplete(taskService.getTask(taskId)) {
           case Success(Some(taskDetail)) => complete(OK, taskDetail)
-          case Success(None) => complete(NotFound, s"Task with id [$taskId] does not exists")
+          case Success(None) => complete(NotFound, s"Task with id [$taskId] does not exist")
           case Failure(ex) => complete(InternalServerError, s"An error occurred: ${ex.getMessage}")
+        }
+      } ~ get {
+        path("result") {
+          taskService.downloadJson(taskId) match {
+            case Some(fileContentsSource) => complete(HttpEntity(`text/plain(UTF-8)`, fileContentsSource))
+            case None => complete(NotFound, s"Requested file for [$taskId] does not exist")
+          }
         }
       } ~ delete {
         onComplete(taskService.cancelTask(taskId)) {
           case Success(Right(taskDetail)) => complete(OK, taskDetail)
-          case Success(Left(cancelTaskException)) => complete(BadRequest, cancelTaskException.message)
+          case Success(Left(cancelTaskErrorMessage)) => complete(BadRequest, cancelTaskErrorMessage)
           case Failure(ex) => complete(InternalServerError, s"An error occurred: ${ex.getMessage}")
         }
       }
@@ -33,9 +42,11 @@ class TaskRouter(taskService: TaskService)(implicit ec: ExecutionContext) extend
           case Failure(ex) => complete(InternalServerError, s"An error occurred: ${ex.getMessage}")
         }
       } ~ post {
-        onComplete(taskService.createTask()) {
-          case Success(taskId) => complete(OK, TaskCreateResponse(taskId))
-          case Failure(ex) => complete(InternalServerError, s"An error occurred: ${ex.getMessage}")
+        entity(as[TaskCreateRequest]) { taskCreateRequest =>
+          onComplete(taskService.createTask(taskCreateRequest.csvUrl)) {
+            case Success(taskId) => complete(OK, TaskCreateResponse(taskId))
+            case Failure(ex) => complete(InternalServerError, s"An error occurred: ${ex.getMessage}")
+          }
         }
       }
     }

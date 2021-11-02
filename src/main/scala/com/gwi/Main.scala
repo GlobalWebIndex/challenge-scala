@@ -4,7 +4,8 @@ import akka.actor.ActorSystem
 import akka.http.scaladsl.Http
 import com.gwi.route.TaskRouter
 import com.gwi.service.TaskServiceImpl
-import com.gwi.storage.InMemoryTaskStorage
+import com.gwi.repository.InMemoryTaskRepository
+import com.gwi.storage.FsTaskStorage
 
 import scala.concurrent.ExecutionContextExecutor
 import scala.concurrent.duration.DurationInt
@@ -17,9 +18,11 @@ object Main {
 
     val host = "0.0.0.0"
     val port = 8080
+    val rootDir = "/tmp/tasks"
 
-    val taskStorage = new InMemoryTaskStorage()
-    val taskService = new TaskServiceImpl(taskStorage)
+    val taskStorage = new FsTaskStorage(rootDir)
+    val taskRepository = new InMemoryTaskRepository()
+    val taskService = new TaskServiceImpl(taskRepository, taskStorage)
     val taskRouter = new TaskRouter(taskService)
 
     Http()

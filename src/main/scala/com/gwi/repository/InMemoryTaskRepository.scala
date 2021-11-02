@@ -1,4 +1,4 @@
-package com.gwi.storage
+package com.gwi.repository
 
 import com.gwi.model.TaskDetail
 
@@ -6,7 +6,7 @@ import java.util.UUID
 import scala.collection.concurrent.TrieMap
 import scala.concurrent.Future
 
-class InMemoryTaskStorage extends TaskStorage {
+class InMemoryTaskRepository extends TaskRepository {
   val state = new TrieMap[UUID, TaskDetail]()
 
   override def upsertTask(task: TaskDetail): Future[UUID] = {
