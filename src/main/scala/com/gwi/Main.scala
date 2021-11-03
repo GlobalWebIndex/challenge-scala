@@ -1,6 +1,7 @@
 package com.gwi
 
 import akka.actor.ActorSystem
+import akka.event.Logging
 import akka.http.scaladsl.Http
 import com.gwi.route.TaskRouter
 import com.gwi.service.TaskServiceImpl
@@ -15,6 +16,7 @@ object Main {
   def main(args: Array[String]): Unit = {
     implicit val system: ActorSystem = ActorSystem()
     implicit val dispatcher: ExecutionContextExecutor = system.dispatcher
+    val logger = Logging.getLogger(system, this.getClass)
 
     val host = "0.0.0.0"
     val port = 8080
@@ -29,7 +31,7 @@ object Main {
       .newServerAt(host, port)
       .bind(taskRouter.routes)
       .map(_.addToCoordinatedShutdown(hardTerminationDeadline = 10.seconds))
-      .foreach(_ => println(s"Server started at $host:$port"))
+      .foreach(_ => logger.info(s"Server started at $host:$port"))
   }
 
 }

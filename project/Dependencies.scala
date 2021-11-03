@@ -28,6 +28,11 @@ object Dependencies {
     "de.heikoseeberger" %% "akka-http-circe" % "1.38.2"
   )
 
-  val all: Seq[ModuleID] = akkaHttpDeps ++ akkaDeps ++ jsonDeps
+  val loggingDeps = Seq(
+    "org.slf4j" % "slf4j-api" % "1.7.32",
+    "ch.qos.logback" % "logback-classic" % "1.2.6"
+  )
+
+  val all: Seq[ModuleID] = akkaHttpDeps ++ akkaDeps ++ jsonDeps ++ loggingDeps
 
 }

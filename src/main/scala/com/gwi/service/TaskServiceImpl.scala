@@ -1,18 +1,25 @@
 package com.gwi.service
 
+import akka.actor.ActorSystem
+import akka.event.Logging
 import akka.stream.scaladsl.Source
 import akka.util.ByteString
 import com.gwi.model.{TaskDetail, TaskState}
 import com.gwi.repository.TaskRepository
 import com.gwi.storage.TaskStorage
 
+import java.net.URI
 import java.util.UUID
 import scala.concurrent.{ExecutionContext, Future}
 
-class TaskServiceImpl(taskRepository: TaskRepository, taskStorage: TaskStorage)(implicit ec: ExecutionContext) extends TaskService {
+class TaskServiceImpl(taskRepository: TaskRepository, taskStorage: TaskStorage)(implicit ec: ExecutionContext, system: ActorSystem)
+    extends TaskService {
+  private val logger = Logging.getLogger(system, this.getClass)
+
   // TODO fully implement cancel and create task
 
-  override def createTask(csvUrl: String): Future[UUID] = taskRepository.upsertTask(TaskDetail(UUID.randomUUID()))
+  override def createTask(csvUrl: URI): Future[UUID] =
+    taskRepository.upsertTask(TaskDetail(UUID.randomUUID()))
 
   override def getTask(taskId: UUID): Future[Option[TaskDetail]] = taskRepository.getTask(taskId)
 
