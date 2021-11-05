@@ -3,9 +3,10 @@ package com.gwi
 import akka.actor.ActorSystem
 import akka.event.Logging
 import akka.http.scaladsl.Http
-import com.gwi.route.TaskRouter
+import com.gwi.api.TaskRouter
+import com.gwi.execution.TaskExecutor
 import com.gwi.service.TaskServiceImpl
-import com.gwi.repository.InMemoryTaskRepository
+import com.gwi.repository.{InMemoryTaskRepository, TaskActor, TaskActorRepository}
 import com.gwi.storage.FsTaskStorage
 
 import scala.concurrent.ExecutionContextExecutor
@@ -13,25 +14,34 @@ import scala.concurrent.duration.DurationInt
 
 object Main {
 
+  // TODO move those to application.conf
+
+  // URI used for task result downloads
+  val ServerUri = "http://localhost:8080"
+
+  val ListenHost = "0.0.0.0"
+  val ListenPort = 8080
+  val RootDir = "/tmp/tasks"
+  val ParallelTasksCount = 2
+
   def main(args: Array[String]): Unit = {
     implicit val system: ActorSystem = ActorSystem()
     implicit val dispatcher: ExecutionContextExecutor = system.dispatcher
     val logger = Logging.getLogger(system, this.getClass)
 
-    val host = "0.0.0.0"
-    val port = 8080
-    val rootDir = "/tmp/tasks"
-
-    val taskStorage = new FsTaskStorage(rootDir)
-    val taskRepository = new InMemoryTaskRepository()
-    val taskService = new TaskServiceImpl(taskRepository, taskStorage)
+    val taskStorage = new FsTaskStorage(RootDir)
+    val taskActor = system.actorOf(TaskActor.props)
+    val taskRepository = new TaskActorRepository(taskActor)
+//    val taskRepository = new InMemoryTaskRepository()
+    val taskExecutor = new TaskExecutor(taskRepository, taskStorage, ParallelTasksCount)
+    val taskService = new TaskServiceImpl(taskRepository, taskStorage, taskExecutor)
     val taskRouter = new TaskRouter(taskService)
 
     Http()
-      .newServerAt(host, port)
+      .newServerAt(ListenHost, ListenPort)
       .bind(taskRouter.routes)
       .map(_.addToCoordinatedShutdown(hardTerminationDeadline = 10.seconds))
-      .foreach(_ => logger.info(s"Server started at $host:$port"))
+      .foreach(_ => logger.info(s"Server started at $ListenHost:$ListenPort"))
   }
 
 }

@@ -1,4 +1,4 @@
-package com.gwi.model
+package com.gwi.api
 
 import io.circe.Encoder
 import io.circe.generic.semiauto.deriveEncoder

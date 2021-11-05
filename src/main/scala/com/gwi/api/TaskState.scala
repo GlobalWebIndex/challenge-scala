@@ -1,4 +1,4 @@
-package com.gwi.model
+package com.gwi.api
 
 import io.circe.Encoder
 import io.circe.syntax.EncoderOps
@@ -20,4 +20,6 @@ object TaskState {
   case object Done extends TaskState
   case object Failed extends TaskState
   case object Canceled extends TaskState
+
+  val TerminalStates: Set[TaskState] = Set(Done, Failed, Canceled)
 }

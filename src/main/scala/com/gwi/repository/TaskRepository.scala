@@ -1,12 +1,15 @@
 package com.gwi.repository
 
-import com.gwi.model.TaskDetail
+import akka.Done
+import com.gwi.execution.Task
 
 import java.util.UUID
 import scala.concurrent.Future
 
 trait TaskRepository {
-  def upsertTask(task: TaskDetail): Future[UUID]
-  def getTask(taskId: UUID): Future[Option[TaskDetail]]
+  def insertTask(task: Task): Future[UUID]
+  def updateTask(task: Task): Future[UUID]
+  def getTask(taskId: UUID): Future[Option[Task]]
+  def setLinesProcessed(taskId: UUID, linesProcessed: Long): Future[Long]
   def getTaskIds: Future[List[UUID]]
 }

@@ -1,40 +1,57 @@
 package com.gwi.service
 
-import akka.actor.ActorSystem
-import akka.event.Logging
+import akka.NotUsed
+import akka.actor.{ActorSystem, Cancellable}
+import akka.http.scaladsl.model.Uri
 import akka.stream.scaladsl.Source
 import akka.util.ByteString
-import com.gwi.model.{TaskDetail, TaskState}
+import com.gwi.execution.{Task, TaskExecutor}
+import com.gwi.api.{TaskDetail, TaskState}
 import com.gwi.repository.TaskRepository
 import com.gwi.storage.TaskStorage
 
-import java.net.URI
+import java.time.Instant
 import java.util.UUID
+import scala.concurrent.duration.DurationInt
 import scala.concurrent.{ExecutionContext, Future}
 
-class TaskServiceImpl(taskRepository: TaskRepository, taskStorage: TaskStorage)(implicit ec: ExecutionContext, system: ActorSystem)
-    extends TaskService {
-  private val logger = Logging.getLogger(system, this.getClass)
+class TaskServiceImpl(taskRepository: TaskRepository, taskStorage: TaskStorage, taskExecutor: TaskExecutor)(implicit
+    ec: ExecutionContext,
+    system: ActorSystem
+) extends TaskService {
 
-  // TODO fully implement cancel and create task
+  private val taskStateRefreshInterval = 2.seconds
 
-  override def createTask(csvUrl: URI): Future[UUID] =
-    taskRepository.upsertTask(TaskDetail(UUID.randomUUID()))
+  override def createTask(csvUri: Uri): Future[UUID] = {
+    val newTask = Task(UUID.randomUUID(), csvUri)
+    for {
+      _ <- taskRepository.insertTask(newTask)
+      _ <- taskExecutor.enqueueTask(newTask.id)
+    } yield newTask.id
+  }
 
-  override def getTask(taskId: UUID): Future[Option[TaskDetail]] = taskRepository.getTask(taskId)
+  override def getTask(taskId: UUID): Future[Option[TaskDetail]] =
+    taskRepository.getTask(taskId).map(_.map(TaskDetail.fromTask))
 
-  override def listTaskIds(): Future[List[UUID]] = taskRepository.getTaskIds
+  override def getTaskSource(taskId: UUID): Source[Option[TaskDetail], Cancellable] =
+    Source
+      .tick(taskStateRefreshInterval, taskStateRefreshInterval, NotUsed)
+      .flatMapConcat(_ => Source.future(getTask(taskId)))
+      .takeWhile(_.exists(t => !TaskState.TerminalStates.contains(t.state)))
 
-  override def cancelTask(taskId: UUID): Future[Either[String, TaskDetail]] = {
+  override def listTaskIds(): Future[List[UUID]] =
+    taskRepository.getTaskIds
+
+  override def cancelTask(taskId: UUID): Future[Either[String, UUID]] = {
     taskRepository.getTask(taskId).flatMap {
       case Some(task) if task.state == TaskState.Scheduled || task.state == TaskState.Running =>
-        val updatedTask = task.copy(state = TaskState.Canceled)
-        taskRepository.upsertTask(updatedTask).map(_ => Right(updatedTask))
+        taskExecutor.cancelTaskExecution(taskId)
+        taskRepository.updateTask(task.copy(endedAt = Some(Instant.now()), state = TaskState.Canceled)).map(Right(_))
       case Some(task) =>
         Future.successful(Left(s"Task state is [${task.state}], only Scheduled or Running tasks can be cancelled"))
       case None => Future.successful(Left(s"Task with id [$taskId] does not exists"))
     }
   }
 
-  def downloadJson(taskId: UUID): Option[Source[ByteString, _]] = taskStorage.taskJsonSource(taskId)
+  def downloadJson(taskId: UUID): Option[Source[ByteString, _]] = taskStorage.jsonSource(taskId)
 }

@@ -13,6 +13,7 @@ object Dependencies {
   )
 
   val akkaDeps: Seq[ModuleID] = Seq(
+    "com.lightbend.akka" %% "akka-stream-alpakka-csv" % "3.0.3",
     "com.typesafe.akka" %% "akka-actor" % akkaVersion,
     "com.typesafe.akka" %% "akka-actor-typed" % akkaVersion,
     "com.typesafe.akka" %% "akka-stream" % akkaVersion,
@@ -28,10 +29,7 @@ object Dependencies {
     "de.heikoseeberger" %% "akka-http-circe" % "1.38.2"
   )
 
-  val loggingDeps = Seq(
-    "org.slf4j" % "slf4j-api" % "1.7.32",
-    "ch.qos.logback" % "logback-classic" % "1.2.6"
-  )
+  val loggingDeps = Seq("org.slf4j" % "slf4j-api" % "1.7.32", "ch.qos.logback" % "logback-classic" % "1.2.6")
 
   val all: Seq[ModuleID] = akkaHttpDeps ++ akkaDeps ++ jsonDeps ++ loggingDeps
 

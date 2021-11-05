@@ -1,17 +1,19 @@
-package com.gwi.route
+package com.gwi.api
 
 import akka.actor.ActorSystem
 import akka.event.Logging
-import akka.http.scaladsl.model.StatusCodes.{BadRequest, InternalServerError, NotFound, OK}
-import akka.http.scaladsl.server.{Directives, Route}
+import akka.http.scaladsl.marshalling.sse.EventStreamMarshalling._
 import akka.http.scaladsl.model.ContentTypes._
-import akka.http.scaladsl.model.HttpEntity
-import com.gwi.model.{TaskCreateRequest, TaskCreateResponse, TaskListResponse}
+import akka.http.scaladsl.model.StatusCodes._
+import akka.http.scaladsl.model.sse.ServerSentEvent
+import akka.http.scaladsl.model.{HttpEntity, Uri}
+import akka.http.scaladsl.server.{Directives, Route}
 import com.gwi.service.TaskService
 import de.heikoseeberger.akkahttpcirce.FailFastCirceSupport
+import io.circe.syntax.EncoderOps
 
-import java.net.URI
 import scala.concurrent.ExecutionContext
+import scala.concurrent.duration.DurationInt
 import scala.util.{Failure, Success, Try}
 
 class TaskRouter(taskService: TaskService)(implicit ec: ExecutionContext, system: ActorSystem)
@@ -34,6 +36,13 @@ class TaskRouter(taskService: TaskService)(implicit ec: ExecutionContext, system
       } ~ get {
         pathEndOrSingleSlash {
           onComplete(taskService.getTask(taskId)) {
+            case Success(Some(taskDetail)) if taskDetail.state == TaskState.Running =>
+              complete(
+                taskService
+                  .getTaskSource(taskId)
+                  .map(task => ServerSentEvent(task.asJson.noSpaces))
+                  .keepAlive(maxIdle = 1.second, () => ServerSentEvent.heartbeat)
+              )
             case Success(Some(taskDetail)) => complete(OK, taskDetail)
             case Success(None) => complete(NotFound, s"Task with id [$taskId] does not exist")
             case Failure(ex) =>
@@ -43,7 +52,7 @@ class TaskRouter(taskService: TaskService)(implicit ec: ExecutionContext, system
         }
       } ~ delete {
         onComplete(taskService.cancelTask(taskId)) {
-          case Success(Right(taskDetail)) => complete(OK, taskDetail)
+          case Success(Right(taskId)) => complete(Accepted, taskId)
           case Success(Left(cancelTaskErrorMessage)) => complete(BadRequest, cancelTaskErrorMessage)
           case Failure(ex) =>
             logger.error(ex, s"An error occurred while canceling task")
@@ -60,17 +69,17 @@ class TaskRouter(taskService: TaskService)(implicit ec: ExecutionContext, system
         }
       } ~ post {
         entity(as[TaskCreateRequest]) { taskCreateRequest =>
-          Try(new URI(taskCreateRequest.csvUrl)) match {
+          Try(Uri(taskCreateRequest.csvUri)) match {
             case Success(uri) =>
               onComplete(taskService.createTask(uri)) {
-                case Success(taskId) => complete(OK, TaskCreateResponse(taskId))
+                case Success(taskId) => complete(Accepted, TaskCreateResponse(taskId))
                 case Failure(ex) =>
                   logger.error(ex, s"An error occurred while creating a task")
                   complete(InternalServerError, s"An error occurred: ${ex.getMessage}")
               }
             case Failure(ex) =>
-              logger.error(ex, s"Failed to convert ${taskCreateRequest.csvUrl} to URI")
-              complete(BadRequest, s"Failed to convert ${taskCreateRequest.csvUrl} to URI")
+              logger.error(ex, s"Failed to parse ${taskCreateRequest.csvUri} to URI")
+              complete(BadRequest, s"Failed to parse ${taskCreateRequest.csvUri} to URI")
           }
 
         }

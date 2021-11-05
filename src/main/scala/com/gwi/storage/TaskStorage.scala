@@ -1,14 +1,13 @@
 package com.gwi.storage
 
-import akka.Done
-import akka.stream.scaladsl.Source
+import akka.stream.IOResult
+import akka.stream.scaladsl.{Sink, Source}
 import akka.util.ByteString
 
-import java.net.URI
 import java.util.UUID
+import scala.concurrent.Future
 
 trait TaskStorage {
-  def csvSource(filePath: URI): Option[Source[ByteString, _]]
-  def taskJsonSource(taskId: UUID): Option[Source[ByteString, _]]
-  def addFile(): Done
+  def jsonSource(taskId: UUID): Option[Source[ByteString, _]]
+  def jsonSink(taskId: UUID): Sink[ByteString, Future[IOResult]]
 }
