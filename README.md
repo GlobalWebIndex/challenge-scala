@@ -1,6 +1,6 @@
 # Scala challenge
 
-Hello future colleague! In this assessment, we request that you implement an HTTP application that converts CSV data sets to JSON data sets. The application will provide the following endpoints:
+This is an HTTP application that converts CSV data sets to JSON data sets. The application has following endpoints:
  
 ## Create Task 
 #### POST /task/
@@ -17,7 +17,7 @@ Return informations about the task:
 - lines processed
 - avg lines processed (count/sec)
 - state (`SCHEDULED/RUNNING/DONE/FAILED/CANCELED`)
-- result (uri where the JSON file can be downloaded)
+- result (uri where the JSON file can be downloaded) - this is handled by SSE
 
 Keep the connection open until the task isn't in a terminal state and send the updated response every 2 seconds.
 

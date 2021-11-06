@@ -7,13 +7,7 @@ sealed trait TaskState
 
 object TaskState {
 
-  implicit val taskStateEncoder: Encoder[TaskState] = Encoder.instance {
-    case Scheduled => "SCHEDULED".asJson
-    case Running => "RUNNING".asJson
-    case Done => "DONE".asJson
-    case Failed => "FAILED".asJson
-    case Canceled => "CANCELED".asJson
-  }
+  implicit val taskStateEncoder: Encoder[TaskState] = Encoder.instance(_.toString.toUpperCase.asJson)
 
   case object Scheduled extends TaskState
   case object Running extends TaskState

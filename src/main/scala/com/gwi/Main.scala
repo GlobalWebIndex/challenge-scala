@@ -4,7 +4,7 @@ import akka.actor.ActorSystem
 import akka.event.Logging
 import akka.http.scaladsl.Http
 import com.gwi.api.TaskRouter
-import com.gwi.execution.TaskExecutor
+import com.gwi.execution.TaskExecutorImpl
 import com.gwi.service.TaskServiceImpl
 import com.gwi.repository.{InMemoryTaskRepository, TaskActor, TaskActorRepository}
 import com.gwi.storage.FsTaskStorage
@@ -33,7 +33,7 @@ object Main {
     val taskActor = system.actorOf(TaskActor.props)
     val taskRepository = new TaskActorRepository(taskActor)
 //    val taskRepository = new InMemoryTaskRepository()
-    val taskExecutor = new TaskExecutor(taskRepository, taskStorage, ParallelTasksCount)
+    val taskExecutor = new TaskExecutorImpl(taskRepository, taskStorage, ParallelTasksCount)
     val taskService = new TaskServiceImpl(taskRepository, taskStorage, taskExecutor)
     val taskRouter = new TaskRouter(taskService)
 
