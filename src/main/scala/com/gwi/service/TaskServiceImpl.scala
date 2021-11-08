@@ -46,7 +46,14 @@ class TaskServiceImpl(taskRepository: TaskRepository, taskStorage: TaskStorage, 
     taskRepository.getTask(taskId).flatMap {
       case Some(task) if task.state == TaskState.Scheduled || task.state == TaskState.Running =>
         taskExecutor.cancelTaskExecution(taskId)
-        taskRepository.updateTask(task.copy(endedAt = Some(Instant.now()), state = TaskState.Canceled)).map(Right(_))
+        taskRepository
+          .updateTask(task.copy(endedAt = Some(Instant.now()), state = TaskState.Canceled))
+          .flatMap(_ => taskRepository.getTask(taskId))
+          .map {
+            case Some(t) if t.state == TaskState.Canceled => Right(taskId)
+            case Some(t) => Left(s"Task state could not be updated because it's in state ${t.state}")
+            case _ => Left(s"Task with id [$taskId] does not exists")
+          }
       case Some(task) =>
         Future.successful(Left(s"Task state is [${task.state}], only Scheduled or Running tasks can be cancelled"))
       case None => Future.successful(Left(s"Task with id [$taskId] does not exists"))

@@ -18,7 +18,6 @@ import java.time.Instant
 import java.util.UUID
 import scala.collection.concurrent.TrieMap
 import scala.concurrent.{ExecutionContext, Future}
-import scala.util.Success
 
 class TaskExecutorImpl(taskRepository: TaskRepository, taskStorage: TaskStorage, parallelTaskCount: Int)(implicit
     system: ActorSystem,
@@ -68,11 +67,15 @@ class TaskExecutorImpl(taskRepository: TaskRepository, taskStorage: TaskStorage,
           case Some(t) if t.state == TaskState.Failed => t
           case Some(t) => t.copy(state = TaskState.Done, endedAt = Some(Instant.now()))
         }
-        .andThen { case Success(t) =>
+        .flatMap { t =>
           killSwitchByRunningTask.remove(task.id)
-          taskRepository.updateTask(t)
-          logger.info(s"Task done: [$t]")
+
+          taskRepository.updateTask(t).map(_ => t).recover { case ex =>
+            logger.error(s"Task update failed with message: ${ex.getMessage}")
+            t
+          }
         }
+        .andThen(t => logger.info(s"Task done: [$t]"))
 
     case Some(task) =>
       logger.info(s"Task [${task.id}] is not in processable state, task state: [${task.state}] - skipping")
