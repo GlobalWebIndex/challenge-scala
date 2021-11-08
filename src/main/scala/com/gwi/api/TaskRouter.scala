@@ -34,7 +34,7 @@ class TaskRouter(taskService: TaskService)(implicit ec: ExecutionContext, system
   private def getTaskResult(taskId: UUID) = get {
     pathPrefix("result") {
       taskService.getTaskResult(taskId) match {
-        case Some(fileContentSource) => complete(HttpEntity(`application/json`, fileContentSource))
+        case Some(fileContentSource) => complete(OK, HttpEntity(`application/json`, fileContentSource))
         case None =>
           logger.warning(s"Requested file for [$taskId] does not exist")
           complete(NotFound, s"Requested file for [$taskId] does not exist")
@@ -44,39 +44,30 @@ class TaskRouter(taskService: TaskService)(implicit ec: ExecutionContext, system
 
   private def getTaskDetail(taskId: UUID) = get {
     pathEndOrSingleSlash {
-      onComplete(taskService.getTask(taskId)) {
-        case Success(Some(taskDetail)) if taskDetail.state == TaskState.Running =>
+      onSuccess(taskService.getTask(taskId)) {
+        case Some(taskDetail) if taskDetail.state == TaskState.Running =>
           complete(
             taskService
               .getTaskSource(taskId)
               .map(task => ServerSentEvent(task.asJson.noSpaces))
               .keepAlive(maxIdle = 1.second, () => ServerSentEvent.heartbeat)
           )
-        case Success(Some(taskDetail)) => complete(OK, taskDetail)
-        case Success(None) => complete(NotFound, s"Task with id [$taskId] does not exist")
-        case Failure(ex) =>
-          logger.error(ex, s"An error occurred while getting a task")
-          complete(InternalServerError, s"An error occurred: ${ex.getMessage}")
+        case Some(taskDetail) => complete(OK, taskDetail)
+        case None => complete(NotFound, s"Task with id [$taskId] does not exist")
       }
     }
   }
 
   private def cancelTask(taskId: UUID) = delete {
-    onComplete(taskService.cancelTask(taskId)) {
-      case Success(Right(taskId)) => complete(Accepted, taskId)
-      case Success(Left(cancelTaskErrorMessage)) => complete(BadRequest, cancelTaskErrorMessage)
-      case Failure(ex) =>
-        logger.error(ex, s"An error occurred while canceling task")
-        complete(InternalServerError, s"An error occurred: ${ex.getMessage}")
+    onSuccess(taskService.cancelTask(taskId)) {
+      case Right(taskId) => complete(Accepted, taskId)
+      case Left(cancelTaskErrorMessage) => complete(BadRequest, cancelTaskErrorMessage)
     }
   }
 
   private def getTaskIds = get {
-    onComplete(taskService.listTaskIds()) {
-      case Success(taskIds) => complete(OK, TaskListResponse(taskIds))
-      case Failure(ex) =>
-        logger.error(ex, s"An error occurred while listing tasks")
-        complete(InternalServerError, s"An error occurred: ${ex.getMessage}")
+    onSuccess(taskService.listTaskIds()) { taskIds =>
+      complete(OK, TaskListResponse(taskIds))
     }
   }
 
@@ -84,11 +75,8 @@ class TaskRouter(taskService: TaskService)(implicit ec: ExecutionContext, system
     entity(as[TaskCreateRequest]) { taskCreateRequest =>
       Try(Uri(taskCreateRequest.csvUri)) match {
         case Success(uri) =>
-          onComplete(taskService.createTask(uri)) {
-            case Success(taskId) => complete(Accepted, TaskCreateResponse(taskId))
-            case Failure(ex) =>
-              logger.error(ex, s"An error occurred while creating a task")
-              complete(InternalServerError, s"An error occurred: ${ex.getMessage}")
+          onSuccess(taskService.createTask(uri)) { taskId =>
+            complete(Accepted, TaskCreateResponse(taskId))
           }
         case Failure(ex) =>
           logger.error(ex, s"Failed to parse ${taskCreateRequest.csvUri} to URI")
