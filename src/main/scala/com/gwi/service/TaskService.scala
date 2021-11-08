@@ -18,6 +18,6 @@ trait TaskService {
   def listTaskIds(): Future[Set[UUID]]
   def cancelTask(taskId: UUID): Future[Either[String, UUID]]
 
-  def downloadJson(taskId: UUID): Option[Source[ByteString, _]]
+  def getTaskResult(taskId: UUID): Option[Source[ByteString, _]]
 
 }

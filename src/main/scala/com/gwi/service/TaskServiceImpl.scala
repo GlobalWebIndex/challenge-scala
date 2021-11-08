@@ -60,5 +60,5 @@ class TaskServiceImpl(taskRepository: TaskRepository, taskStorage: TaskStorage, 
     }
   }
 
-  def downloadJson(taskId: UUID): Option[Source[ByteString, _]] = taskStorage.jsonSource(taskId)
+  def getTaskResult(taskId: UUID): Option[Source[ByteString, _]] = taskStorage.jsonSource(taskId)
 }

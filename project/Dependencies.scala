@@ -30,6 +30,7 @@ object Dependencies {
   val testDeps: Seq[ModuleID] = Seq(
     "com.typesafe.akka" %% "akka-actor-testkit-typed" % akkaVersion % Test,
     "com.typesafe.akka" %% "akka-testkit" % akkaVersion % Test,
+    "com.typesafe.akka" %% "akka-http-testkit" % akkaHttpVersion,
     "org.typelevel" %% "discipline-scalatest" % "2.1.5" % Test,
     "org.scalamock" %% "scalamock" % "5.1.0" % Test
   )
