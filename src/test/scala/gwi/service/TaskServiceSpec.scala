@@ -12,7 +12,6 @@ import org.scalamock.scalatest.AsyncMockFactory
 import org.scalatest.flatspec.AsyncFlatSpecLike
 import org.scalatest.matchers.should
 
-import java.util.UUID
 import scala.concurrent.{ExecutionContextExecutor, Future}
 
 class TaskServiceSpec
@@ -23,7 +22,6 @@ class TaskServiceSpec
     with SampleData {
 
   implicit val ec: ExecutionContextExecutor = system.dispatcher
-  private val taskId = UUID.fromString("0b406535-21c8-4bcf-b79b-41ab7a01c264")
 
   "TaskService.cancelTask" should "cancel scheduled task" in {
     val repo = mock[TaskRepository]
@@ -33,9 +31,10 @@ class TaskServiceSpec
     val service = new TaskServiceImpl(repo, storage, executor)
     val runningTask = sampleTask.copy(state = TaskState.Running)
 
-    (repo.getTask _).expects(taskId).returns(Future.successful(Some(runningTask)))
-    (executor.cancelTaskExecution _).expects(taskId).returns(true)
-    (repo.updateTask _).expects(*).returns(Future.successful(runningTask.id))
+    (repo.getTask _).expects(sampleTask.id).returns(Future.successful(Some(runningTask)))
+    (executor.cancelTaskExecution _).expects(sampleTask.id).returns(true)
+    (repo.upsertTask _).expects(*).returns(Future.successful(runningTask.id))
+    (repo.getTask _).expects(sampleTask.id).returns(Future.successful(Some(runningTask.copy(state = TaskState.Canceled))))
 
     service.cancelTask(runningTask.id) map (_ shouldEqual Right(runningTask.id))
   }
@@ -48,9 +47,9 @@ class TaskServiceSpec
     val service = new TaskServiceImpl(repo, storage, executor)
     val doneTask = sampleTask.copy(state = TaskState.Done)
 
-    (repo.getTask _).expects(taskId).returns(Future.successful(Some(doneTask)))
+    (repo.getTask _).expects(sampleTask.id).returns(Future.successful(Some(doneTask)))
     (executor.cancelTaskExecution _).expects(*).never()
-    (repo.updateTask _).expects(*).never()
+    (repo.upsertTask _).expects(*).never()
 
     service.cancelTask(doneTask.id) map (_ shouldEqual Left(
       s"Task state is [${doneTask.state}], only Scheduled or Running tasks can be cancelled"

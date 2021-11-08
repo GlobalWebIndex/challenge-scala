@@ -25,7 +25,7 @@ class TaskServiceImpl(taskRepository: TaskRepository, taskStorage: TaskStorage, 
   override def createTask(csvUri: Uri): Future[UUID] = {
     val newTask = Task(UUID.randomUUID(), csvUri)
     for {
-      _ <- taskRepository.insertTask(newTask)
+      _ <- taskRepository.upsertTask(newTask)
       _ <- taskExecutor.enqueueTask(newTask.id)
     } yield newTask.id
   }
@@ -39,7 +39,7 @@ class TaskServiceImpl(taskRepository: TaskRepository, taskStorage: TaskStorage, 
       .flatMapConcat(_ => Source.future(getTask(taskId)))
       .takeWhile(_.exists(t => !TaskState.TerminalStates.contains(t.state)))
 
-  override def listTaskIds(): Future[List[UUID]] =
+  override def listTaskIds(): Future[Set[UUID]] =
     taskRepository.getTaskIds
 
   override def cancelTask(taskId: UUID): Future[Either[String, UUID]] = {
@@ -47,7 +47,7 @@ class TaskServiceImpl(taskRepository: TaskRepository, taskStorage: TaskStorage, 
       case Some(task) if task.state == TaskState.Scheduled || task.state == TaskState.Running =>
         taskExecutor.cancelTaskExecution(taskId)
         taskRepository
-          .updateTask(task.copy(endedAt = Some(Instant.now()), state = TaskState.Canceled))
+          .upsertTask(task.copy(endedAt = Some(Instant.now()), state = TaskState.Canceled))
           .flatMap(_ => taskRepository.getTask(taskId))
           .map {
             case Some(t) if t.state == TaskState.Canceled => Right(taskId)

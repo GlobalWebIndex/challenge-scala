@@ -17,19 +17,14 @@ object InMemoryTaskRepository {
 class InMemoryTaskRepository extends TaskRepository {
   private val state = new TrieMap[UUID, Task]()
 
-  override def insertTask(task: Task): Future[UUID] = {
-    state.addOne(task.id, task)
-    Future.successful(task.id)
-  }
-
-  def updateTask(task: Task): Future[UUID] = {
+  override def upsertTask(task: Task): Future[UUID] = {
     state.update(task.id, task)
     Future.successful(task.id)
   }
 
   override def getTask(taskId: UUID): Future[Option[Task]] = Future.successful(state.get(taskId))
 
-  override def getTaskIds: Future[List[UUID]] = Future.successful(state.keys.toList)
+  override def getTaskIds: Future[Set[UUID]] = Future.successful(state.keys.toSet)
 
   def setLinesProcessed(taskId: UUID, linesProcessed: Long): Future[Long] = {
     state

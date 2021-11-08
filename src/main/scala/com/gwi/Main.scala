@@ -1,6 +1,7 @@
 package com.gwi
 
-import akka.actor.ActorSystem
+import akka.actor.{ActorSystem, typed}
+import akka.actor.typed.scaladsl.adapter._
 import akka.event.Logging
 import akka.http.scaladsl.Http
 import com.gwi.api.TaskRouter
@@ -26,12 +27,14 @@ object Main {
 
   def main(args: Array[String]): Unit = {
     implicit val system: ActorSystem = ActorSystem()
+    val typedSystem: typed.ActorSystem[Nothing] = system.toTyped
     implicit val dispatcher: ExecutionContextExecutor = system.dispatcher
+
     val logger = Logging.getLogger(system, this.getClass)
 
     val taskStorage = new FsTaskStorage(RootDir)
-    val taskActor = system.actorOf(TaskActor.props)
-    val taskRepository = new TaskActorRepository(taskActor)
+    val taskActor = system.spawn(TaskActor.apply(), "TaskActor")
+    val taskRepository = new TaskActorRepository(taskActor)(dispatcher, typedSystem)
 //    val taskRepository = new InMemoryTaskRepository()
     val taskExecutor = new TaskExecutorImpl(taskRepository, taskStorage, ParallelTasksCount)
     val taskService = new TaskServiceImpl(taskRepository, taskStorage, taskExecutor)

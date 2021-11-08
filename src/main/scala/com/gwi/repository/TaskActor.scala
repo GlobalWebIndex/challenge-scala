@@ -1,41 +1,40 @@
 package com.gwi.repository
 
-import akka.actor.{Actor, Props}
+import akka.actor.typed.{ActorRef, Behavior}
+import akka.actor.typed.scaladsl.Behaviors
 import com.gwi.execution.Task
 
 import java.util.UUID
 
 object TaskActor {
-  case class Create(task: Task)
-  case class Update(task: Task)
-  case class SetLinesProcessed(taskId: UUID, linesProcessed: Long)
-  case class Get(taskId: UUID)
-  case object GetTaskIds
+  sealed trait TaskCommand
+  case class Upsert(task: Task, replyTo: ActorRef[UUID]) extends TaskCommand
+  case class SetLinesProcessed(taskId: UUID, linesProcessed: Long, replyTo: ActorRef[Long]) extends TaskCommand
+  case class Get(taskId: UUID, replyTo: ActorRef[Option[Task]]) extends TaskCommand
+  case class GetTaskIds(replyTo: ActorRef[Set[UUID]]) extends TaskCommand
 
-  def props: Props = Props[TaskActor]
-}
+  def apply(): Behavior[TaskCommand] = Behaviors.setup(ctx => {
+    def state(tasks: Map[UUID, Task]): Behavior[TaskCommand] = Behaviors.receiveMessage[TaskCommand] {
+      case GetTaskIds(replyTo) =>
+        replyTo ! tasks.keys.toSet
+        Behaviors.same
+      case Upsert(task, replyTo) =>
+        replyTo ! task.id
+        state(tasks + (task.id -> task))
+      case SetLinesProcessed(taskId, count, replyTo) =>
+        tasks.get(taskId).map(_.copy(linesProcessed = count)) match {
+          case Some(task) =>
+            replyTo ! count
+            state(tasks + (task.id -> task))
+          case _ =>
+            replyTo ! -1
+            Behaviors.same
+        }
+      case Get(taskId, replyTo) =>
+        replyTo ! tasks.get(taskId)
+        Behaviors.same
+    }
 
-class TaskActor extends Actor {
-
-  import TaskActor._
-
-  override def receive: Receive = state(Map.empty)
-
-  def state(tasks: Map[UUID, Task]): Receive = {
-    case GetTaskIds => sender() ! tasks.keys
-    case Create(task) =>
-      context.become(state(tasks + (task.id -> task)))
-      sender() ! task.id
-    case Update(task) =>
-      context.become(state(tasks + (task.id -> task)))
-      sender() ! task.id
-    case SetLinesProcessed(taskId, count) =>
-      tasks.get(taskId).map(_.copy(linesProcessed = count)).foreach { task =>
-        context.become(state(tasks + (task.id -> task)))
-      }
-      sender() ! count
-    case Get(taskId) =>
-      sender() ! tasks.get(taskId)
-  }
-
+    state(Map.empty)
+  })
 }

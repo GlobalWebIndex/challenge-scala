@@ -41,7 +41,7 @@ class TaskExecutorImpl(taskRepository: TaskRepository, taskStorage: TaskStorage,
       logger.info(s"Task started: [$taskStarted]")
 
       val (result, killSwitch) = Source
-        .future(taskRepository.updateTask(taskStarted))
+        .future(taskRepository.upsertTask(taskStarted))
         .flatMapConcat(_ => downloadCsvSource(task.csvUri))
         .via(CsvParsing.lineScanner())
         .via(CsvToMap.toMapAsStrings())
@@ -70,7 +70,7 @@ class TaskExecutorImpl(taskRepository: TaskRepository, taskStorage: TaskStorage,
         .flatMap { t =>
           killSwitchByRunningTask.remove(task.id)
 
-          taskRepository.updateTask(t).map(_ => t).recover { case ex =>
+          taskRepository.upsertTask(t).map(_ => t).recover { case ex =>
             logger.error(s"Task update failed with message: ${ex.getMessage}")
             t
           }

@@ -9,4 +9,4 @@ object TaskListResponse {
   implicit val taskListResponseEncoder: Encoder[TaskListResponse] = deriveEncoder
 }
 
-case class TaskListResponse(tasks: List[UUID])
+case class TaskListResponse(tasks: Set[UUID])
