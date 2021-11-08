@@ -97,19 +97,22 @@ class TaskExecutorImpl(taskRepository: TaskRepository, taskStorage: TaskStorage,
         false
     }
 
-  override def enqueueTask(taskId: UUID): Future[Boolean] = queue.offer(taskId).map {
+  override def enqueueTask(taskId: UUID): Future[Boolean] = queue.offer(taskId).flatMap {
     case QueueOfferResult.Enqueued =>
       logger.info(s"Task enqueued: [$taskId]")
-      true
+      Future.successful(true)
     case QueueOfferResult.Dropped =>
-      logger.info(s"Task dropped: [$taskId]")
-      false
+      val msg = s"Task dropped: [$taskId]"
+      logger.warning(msg)
+      Future.failed(new Exception(msg))
     case QueueOfferResult.Failure(ex) =>
-      logger.info(s"Offer for task $taskId failed ${ex.getMessage}")
-      false
+      val msg = s"Offer for task $taskId failed ${ex.getMessage}"
+      logger.error(msg)
+      Future.failed(new Exception(msg))
     case QueueOfferResult.QueueClosed =>
-      logger.info("Source Queue closed")
-      false
+      val msg = "Source Queue closed"
+      logger.warning(msg)
+      Future.failed(new Exception(msg))
   }
 
 }
