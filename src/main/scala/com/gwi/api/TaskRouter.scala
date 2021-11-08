@@ -34,7 +34,7 @@ class TaskRouter(taskService: TaskService)(implicit ec: ExecutionContext, system
   private def getTaskResult(taskId: UUID) = get {
     pathPrefix("result") {
       taskService.getTaskResult(taskId) match {
-        case Some(fileContentsSource) => complete(HttpEntity(`text/plain(UTF-8)`, fileContentsSource))
+        case Some(fileContentSource) => complete(HttpEntity(`application/json`, fileContentSource))
         case None =>
           logger.warning(s"Requested file for [$taskId] does not exist")
           complete(NotFound, s"Requested file for [$taskId] does not exist")
