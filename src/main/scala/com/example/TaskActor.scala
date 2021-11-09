@@ -87,7 +87,7 @@ object TaskActor {
     val taskFlow: TaskToFileFlow= new CsvToJsonDownloader()(ctx.system)
 
     def runTask(task: Task): UniqueKillSwitch = {
-      Source(List(task))
+      Source.single(task)
         .via(taskFlow.flow)
         .viaMat(KillSwitches.single)(Keep.both)
         .to(Sink.onComplete {
