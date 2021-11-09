@@ -34,7 +34,8 @@ object CsvToJsonApp {
     Files.createDirectories(Paths.get("output"))
 
     val rootBehavior = Behaviors.setup[Nothing] { context =>
-      val taskActor = context.spawn(TaskActor(), "TaskActor")
+      val taskToFileFlow = new CsvToJsonDownloader()(context.system)
+      val taskActor = context.spawn(TaskActor(taskToFileFlow), "TaskActor")
       context.watch(taskActor)
 
       val routes = new TaskRoutes(taskActor)(context.system)

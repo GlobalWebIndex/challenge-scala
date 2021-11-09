@@ -33,6 +33,7 @@ lazy val root = (project in file(".")).
       "ch.qos.logback"    % "logback-classic"           % "1.2.3",
       "com.typesafe.akka" %% "akka-http-testkit"        % AkkaHttpVersion % Test,
       "com.typesafe.akka" %% "akka-actor-testkit-typed" % AkkaVersion     % Test,
+      "com.typesafe.akka" %% "akka-stream-testkit"      % AkkaVersion     % Test,
       "org.scalatest"     %% "scalatest"                % "3.1.4"         % Test
     )
   )

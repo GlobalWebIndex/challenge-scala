@@ -20,7 +20,7 @@ class TaskRoutes(taskActor: ActorRef[TaskMessage])(implicit val system: ActorSys
   final val SERVER_HOST = system.settings.config.getString("server.host")
   final val SERVER_PORT = system.settings.config.getInt("server.port")
 
-  def listTasks(): Future[Tasks] =
+  def listTasks(): Future[ListTasksResponse] =
     taskActor.ask(ListTasks)
   def createTask(csvUri: String): Future[Task] =
     taskActor.ask(CreateTask(csvUri, _))

@@ -1,27 +1,20 @@
 package com.example
 
-import akka.NotUsed
 import akka.actor.typed.scaladsl.{ActorContext, Behaviors}
 import akka.actor.typed.{ActorRef, Behavior}
-import akka.http.scaladsl.Http
-import akka.http.scaladsl.client.RequestBuilding.Get
 import akka.http.scaladsl.model.HttpResponse
 import akka.http.scaladsl.model.StatusCodes.OK
 import akka.stream._
-import akka.stream.alpakka.csv.scaladsl.{CsvParsing, CsvToMap}
-import akka.stream.scaladsl.{FileIO, Flow, Keep, Sink, Source}
+import akka.stream.scaladsl.{Keep, Sink, Source}
 import akka.util.ByteString
 import io.circe.Codec
-import io.circe.generic.extras.Configuration
 import io.circe.generic.extras.semiauto.deriveEnumerationCodec
 import spray.json.{JsValue, JsonWriter}
 
-import java.nio.file.Paths
 import scala.collection.immutable
 import scala.collection.immutable.Queue
 import scala.language.postfixOps
 import scala.util.{Failure, Success}
-
 
 /**
  * @author Petros Siatos
@@ -53,15 +46,15 @@ object TaskActor {
 
   final case class Task(id: Int, csvUri: String, status: TaskStatus, jsonUri: Option[String] = None)
 
-  final case class Tasks(tasks: immutable.Seq[Task])
+  final case class ListTasksResponse(tasks: immutable.Seq[Task])
+  final case class TaskActorResponse(message: String)
 
 
   sealed trait TaskMessage
 
   final case class CreateTask(csvUri: String, replyTo: ActorRef[Task]) extends TaskMessage
-  final case class ListTasks(replyTo: ActorRef[Tasks]) extends TaskMessage
+  final case class ListTasks(replyTo: ActorRef[ListTasksResponse]) extends TaskMessage
   final case class CancelTask(id: Int, replyTo: ActorRef[TaskActorResponse]) extends TaskMessage
-  final case class TaskActorResponse(message: String)
 
   // Internal Messages
   final case class TaskDone(id: Int) extends TaskMessage
@@ -82,50 +75,20 @@ object TaskActor {
 
   def toJson(map: Map[String, String])(implicit jsWriter: JsonWriter[Map[String, String]]): JsValue = jsWriter.write(map)
 
-
-  def apply(): Behavior[TaskMessage] = Behaviors.setup(ctx => {
+  def apply(taskToFileFlow: TaskToFileFlow): Behavior[TaskMessage] = Behaviors.setup(ctx => {
     ctx.log.info("Starting")
-    taskActorBehavior(ctx, TaskActorContext(Map.empty, Queue.empty, Map.empty))
+    taskActorBehavior(ctx, TaskActorContext(Map.empty, Queue.empty, Map.empty))(taskToFileFlow)
   })
 
-  private def taskActorBehavior(ctx: ActorContext[TaskMessage], taskCtx: TaskActorContext): Behavior[TaskMessage] = {
-    implicit val mat: Materializer = Materializer(ctx)
+  private def taskActorBehavior(ctx: ActorContext[TaskMessage], taskCtx: TaskActorContext)(implicit taskToFileFlow: TaskToFileFlow): Behavior[TaskMessage] = {
+    implicit val mat: Materializer = Materializer(ctx.system)
 
-    val MAX_CAPACITY = ctx.system.settings.config.getInt("downloader.max-capacity")
-    val PARALELLISM = ctx.system.settings.config.getInt("downloader.parallelism")
-    val OUTPUT_FOLDER = ctx.system.settings.config.getString("downloader.output-folder")
-    val DELAY_SECONDS = ctx.system.settings.config.getDuration("downloader.delay")
-
-    //val KAGGLE_USERNAME = ctx.system.settings.config.getString("kaggle.username")
-    //val KAGGLE_API_KEY = ctx.system.settings.config.getString("kaggle.apikey")
-
-    val downloadFlow: Flow[Task, IOResult, NotUsed] = Flow[Task].mapAsyncUnordered(PARALELLISM) { task =>
-      val request = Get(task.csvUri)
-      //.withHeaders(Authorization(BasicHttpCredentials(username = KAGGLE_USERNAME, password = KAGGLE_API_KEY)))
-      val source = Source.single(request)
-      val filePath = Paths.get(s"$OUTPUT_FOLDER/${task.id}.json")
-
-      import spray.json.DefaultJsonProtocol._
-
-      import scala.concurrent.duration._
-
-      source
-        .delay(DELAY_SECONDS.toSeconds seconds)
-        .mapAsyncUnordered(1)(Http()(ctx.system).singleRequest(_))
-        .flatMapConcat(extractEntityData)
-        .via(CsvParsing.lineScanner())
-        .via(CsvToMap.toMapAsStrings())
-        .map(toJson)
-        .map(_.compactPrint)
-        .intersperse("[", ",\n", "]")
-        .map(ByteString(_))
-        .withAttributes(ActorAttributes.dispatcher("csv-download-dispatcher"))
-        .runWith(FileIO.toPath(filePath))
-    }
+    val PARALELLISM: Int = ctx.system.settings.config.getInt("downloader.parallelism")
+    val taskFlow: TaskToFileFlow= new CsvToJsonDownloader()(ctx.system)
 
     def runTask(task: Task): UniqueKillSwitch = {
       Source(List(task))
-        .via(downloadFlow)
+        .via(taskFlow.flow)
         .viaMat(KillSwitches.single)(Keep.both)
         .to(Sink.onComplete {
           case Success(_) => ctx.self ! TaskDone(task.id)
@@ -134,9 +97,7 @@ object TaskActor {
         .run()
         // Return KillSwitch
         ._2
-
     }
-
 
     /**
      * Runs next task if queue is not empty and MAX_CAPACITY of running tasks is not reached
@@ -147,7 +108,7 @@ object TaskActor {
     def runNextTask(taskContext: TaskActorContext): TaskActorContext = {
       taskContext.taskQueue match {
         case next_task +: taskQueueTail =>
-          if (taskContext.runningTasks.size < MAX_CAPACITY) {
+          if (taskContext.runningTasks.size < PARALELLISM) {
             ctx.log.info(s"Running Task ${next_task.id}")
             val killSwitch = runTask(next_task)
             val updatedRunningTasks = taskContext.runningTasks + (next_task.id -> killSwitch)
@@ -164,7 +125,7 @@ object TaskActor {
 
     Behaviors.receiveMessage {
       case ListTasks(replyTo) =>
-        replyTo ! Tasks(taskCtx.allTasks.values.toSeq)
+        replyTo ! ListTasksResponse(taskCtx.allTasks.values.toSeq)
         Behaviors.same
       case CreateTask(csvUri, replyTo) =>
         val taskId = taskCtx.allTasks.size + 1
