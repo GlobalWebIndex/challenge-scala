@@ -17,7 +17,7 @@ import scala.concurrent.duration.DurationInt
 import scala.concurrent.ExecutionContextExecutor
 
 class TaskActorSpec
-    extends TestKit(ActorSystem("TaskServiceSpec"))
+    extends TestKit(ActorSystem("TaskActorSpec"))
     with AsyncFlatSpecLike
     with should.Matchers
     with AsyncMockFactory

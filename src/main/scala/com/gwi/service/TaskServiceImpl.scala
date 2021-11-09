@@ -6,7 +6,7 @@ import akka.http.scaladsl.model.Uri
 import akka.stream.scaladsl.Source
 import akka.util.ByteString
 import com.gwi.execution.{Task, TaskExecutor}
-import com.gwi.api.{TaskDetail, TaskState}
+import com.gwi.api.{TaskDetail, TaskState, TaskTransformations}
 import com.gwi.repository.TaskRepository
 import com.gwi.storage.TaskStorage
 
@@ -31,7 +31,7 @@ class TaskServiceImpl(taskRepository: TaskRepository, taskStorage: TaskStorage, 
   }
 
   override def getTask(taskId: UUID): Future[Option[TaskDetail]] =
-    taskRepository.getTask(taskId).map(_.map(TaskDetail.fromTask))
+    taskRepository.getTask(taskId).map(_.map(TaskTransformations.toTaskDetail))
 
   override def getTaskSource(taskId: UUID): Source[Option[TaskDetail], Cancellable] =
     Source

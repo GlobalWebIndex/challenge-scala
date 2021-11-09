@@ -2,7 +2,7 @@ package gwi.api
 
 import akka.http.scaladsl.model.StatusCodes
 import akka.http.scaladsl.testkit.ScalatestRouteTest
-import com.gwi.api.{TaskCreateRequest, TaskCreateResponse, TaskRouter}
+import com.gwi.api.{JsonCodecs, TaskCreateRequest, TaskCreateResponse, TaskRouter}
 import com.gwi.execution.{Task, TaskExecutor}
 import com.gwi.repository.InMemoryTaskRepository
 import com.gwi.service.TaskServiceImpl
@@ -15,7 +15,13 @@ import org.scalatest.matchers.should
 
 import scala.concurrent.{ExecutionContextExecutor, Future}
 
-class TaskRouterSpec extends AsyncFlatSpec with should.Matchers with AsyncMockFactory with ScalatestRouteTest with FailFastCirceSupport {
+class TaskRouterSpec
+    extends AsyncFlatSpec
+    with should.Matchers
+    with AsyncMockFactory
+    with ScalatestRouteTest
+    with FailFastCirceSupport
+    with JsonCodecs {
 
   implicit val ec: ExecutionContextExecutor = system.dispatcher
 

@@ -19,7 +19,8 @@ import scala.util.{Failure, Success, Try}
 
 class TaskRouter(taskService: TaskService)(implicit ec: ExecutionContext, system: ActorSystem)
     extends Directives
-    with FailFastCirceSupport {
+    with FailFastCirceSupport
+    with JsonCodecs {
 
   private val logger = Logging.getLogger(system, this.getClass)
 

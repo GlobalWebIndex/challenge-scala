@@ -2,14 +2,10 @@ package com.gwi.api
 
 import com.gwi.Main.ServerUri
 import com.gwi.execution.Task
-import io.circe.Encoder
-import io.circe.generic.semiauto.deriveEncoder
 
 import java.time.Instant
-import java.util.UUID
 
-object TaskDetail {
-  implicit val taskDetailResponseEncoder: Encoder[TaskDetail] = deriveEncoder
+object TaskTransformations {
 
   // This should not happen but returning -1 is seconds is 0
   private def calculateRate(lines: Long, seconds: Long) = {
@@ -32,13 +28,6 @@ object TaskDetail {
     case _ => None
   }
 
-  def fromTask(task: Task): TaskDetail = TaskDetail(task.id, task.linesProcessed, getLinesRate(task), task.state, getMaybeResultUri(task))
+  def toTaskDetail(task: Task): TaskDetail =
+    TaskDetail(task.id, task.linesProcessed, getLinesRate(task), task.state, getMaybeResultUri(task))
 }
-
-case class TaskDetail(
-    id: UUID,
-    linesProcessed: Long = 0,
-    linesPerSecond: Long = 0,
-    state: TaskState = TaskState.Scheduled,
-    result: Option[String] = None
-)

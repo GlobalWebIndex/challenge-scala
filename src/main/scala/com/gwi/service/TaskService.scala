@@ -1,6 +1,5 @@
 package com.gwi.service
 
-import akka.Done
 import akka.actor.Cancellable
 import akka.http.scaladsl.model.Uri
 import akka.stream.scaladsl.Source
