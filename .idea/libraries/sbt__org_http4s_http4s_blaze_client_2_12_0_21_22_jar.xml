@@ -1,0 +1,13 @@
+<component name="libraryTable">
+  <library name="sbt: org.http4s:http4s-blaze-client_2.12:0.21.22:jar">
+    <CLASSES>
+      <root url="jar://$USER_HOME$/Library/Caches/Coursier/v1/https/artifactory.flexys.dev/artifactory/mvn-v-release/org/http4s/http4s-blaze-client_2.12/0.21.22/http4s-blaze-client_2.12-0.21.22.jar!/" />
+    </CLASSES>
+    <JAVADOC>
+      <root url="jar://$USER_HOME$/Library/Caches/Coursier/v1/https/artifactory.flexys.dev/artifactory/mvn-v-release/org/http4s/http4s-blaze-client_2.12/0.21.22/http4s-blaze-client_2.12-0.21.22-javadoc.jar!/" />
+    </JAVADOC>
+    <SOURCES>
+      <root url="jar://$USER_HOME$/Library/Caches/Coursier/v1/https/artifactory.flexys.dev/artifactory/mvn-v-release/org/http4s/http4s-blaze-client_2.12/0.21.22/http4s-blaze-client_2.12-0.21.22-sources.jar!/" />
+    </SOURCES>
+  </library>
+</component>
