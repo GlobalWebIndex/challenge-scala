@@ -7,15 +7,15 @@ package object model {
 
   abstract sealed class Status(val value: String)
 
-  case object Scheduled extends Status("SCHEDULED")
+  case object Scheduled extends Status("Scheduled")
 
-  case object Running extends Status("RUNNING")
+  case object Running extends Status("Running")
 
-  case object Done extends Status("DONE")
+  case object Done extends Status("Done")
 
-  case object Failed extends Status("FAILED")
+  case object Failed extends Status("Failed")
 
-  case object Canceled extends Status("CANCELED")
+  case object Canceled extends Status("Canceled")
 
 
   object Status {
