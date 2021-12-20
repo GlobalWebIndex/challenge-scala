@@ -11,7 +11,7 @@ import io.circe.generic.auto._
 import org.http4s.circe.CirceEntityCodec.circeEntityEncoder
 import org.http4s.circe._
 
-class CsvToJsonApi(service: TaskService) extends Http4sDsl[IO] {
+class TaskApi(service: TaskService) extends Http4sDsl[IO] {
   private val logger = LoggerFactory.getLogger(getClass)
 
   private implicit val encodeImportance: Encoder[Status] =

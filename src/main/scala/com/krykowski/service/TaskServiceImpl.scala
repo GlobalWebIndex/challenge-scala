@@ -16,16 +16,6 @@ import sys.process._
 import java.net.URL
 import java.nio.file.{Path, Paths}
 
-trait TaskService {
-  def createTask(csv: CsvFileLocation): IO[Long]
-
-  def getAllTasks(): List[Task]
-
-  def cancelTask(taskId: Long): IO[Either[TaskNotFoundError.type, Unit]]
-
-  def getJson(taskId: Long): IO[Either[model.TaskNotFoundError.type, List[String]]]
-}
-
 class TaskServiceImpl(taskRepository: TaskRepository) extends TaskService {
   private val logger = LoggerFactory.getLogger(getClass)
 
