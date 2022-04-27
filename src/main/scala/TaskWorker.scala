@@ -14,18 +14,17 @@ import scala.annotation.tailrec
 import scala.jdk.CollectionConverters._
 
 object TaskWorker {
-  sealed trait Report
-  final case class Working(id: Task.Id, progress: Task.Progress) extends Report
-  final case class Finished(id: Task.Id, progress: Task.Progress) extends Report
 
   sealed trait Command
   private final case object Continue extends Command
 
-  def apply(id: Task.Id, from: URI, result: Path, reportTo: ActorRef[Report]): Behavior[Command] =
-    Behaviors setup { context =>
+  final case class ProgressReport(id: Task.Id, progress: Task.Progress)
+
+  def apply(id: Task.Id, from: URI, result: Path, reportTo: ActorRef[ProgressReport]): Behavior[Nothing] = {
+    val behavior = Behaviors setup[Command] { setupContext =>
       type Line = ((Array[String], Int), (Long, Boolean))
 
-      context.log.debug("Starting the CSV to JSON conversion from {} to {}", from, result)
+      setupContext.log.debug("Starting the CSV to JSON conversion from {} to {}", from, result)
       val csvLinesWithIndex = csvLinesFrom(from.toURL).zipWithIndex
       val out = Files.newBufferedWriter(result)
 
@@ -35,21 +34,21 @@ object TaskWorker {
           val ((csv, i), (t, report)) = lines.head
           if (separate) out.write(",\n  ")
           out.write(csv.toJson.compactPrint)
-          // Thread.sleep(10)
+          Thread.sleep(10)
           if (report) (lines.tail, (i + 1, t))
           else convert(lines.tail, (i + 1, t), separate = true)
         }
 
       def worker(lines: LazyList[Line], progress: Task.Progress, separate: Boolean = true): Behaviors.Receive[Command] =
-        Behaviors receiveMessage[Command] { _ =>
+        Behaviors receive[Command] { case (context, Continue) =>
           if (lines.isEmpty) {
             out.write("\n]")
             out.close()
-            reportTo ! Finished(id, progress)
+            reportTo ! ProgressReport(id, progress)
             Behaviors.stopped
           } else {
             val (ls, p) = convert(lines, progress, separate)
-            reportTo ! Working(id, progress)
+            reportTo ! ProgressReport(id, progress)
             context.self ! Continue
             worker(ls, p)
           }
@@ -57,18 +56,21 @@ object TaskWorker {
 
       val lines = csvLinesWithIndex zip punctuate(1000)
       out.write("[\n  ")
-      context.self ! Continue
+      setupContext.self ! Continue
 
       worker(lines, (0,0), separate = false) receiveSignal {
         case (_, PostStop) =>
-          context.log.debug("Worker for task {} stopped", id)
+          setupContext.log.debug("Worker for task {} stopped", id)
           out.close()
           Behaviors.same
         case (_, s) =>
-          context.log.debug("Worker for task {} received signal {}", id, s)
+          setupContext.log.debug("Worker for task {} received signal {}", id, s)
           Behaviors.same
       }
     }
+
+    behavior.narrow
+  }
 
   def csvLinesFrom(url: URL): LazyList[Array[String]] = {
     val csvReader = new CSVReader(new InputStreamReader(url.openStream()))

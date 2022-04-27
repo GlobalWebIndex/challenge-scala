@@ -8,7 +8,7 @@ import akka.http.scaladsl.Http
 import akka.http.scaladsl.Http.ServerBinding
 import akka.http.scaladsl.common.{EntityStreamingSupport, JsonEntityStreamingSupport}
 import akka.http.scaladsl.marshallers.sprayjson.SprayJsonSupport
-import akka.http.scaladsl.model.ContentTypes.`application/json`
+import akka.http.scaladsl.model.ContentTypes._
 import akka.http.scaladsl.model.{HttpEntity, Uri}
 import akka.http.scaladsl.model.StatusCodes._
 import akka.http.scaladsl.model.Uri.Path
@@ -80,8 +80,8 @@ object WebServer extends SprayJsonSupport {
           get {
             onSuccess(controller.ask(TaskController.TaskDetail(id, _))) {
               case Some(task: Task.Done) => complete(HttpEntity(`application/json`, FileIO.fromPath(task.result)))
-              case Some(task) if task.isTerminal => complete(BadRequest, s"Result of task $id is not yet available")
-              case Some(_) => complete(BadRequest, s"Task $id was cancelled or has failed")
+              case Some(task) if task.isTerminal => complete(BadRequest, s"Task $id was cancelled or has failed")
+              case Some(_) => complete(BadRequest, s"Result of task $id is not yet available")
               case None => complete(NotFound, s"Task $id not found")
             }
           }
@@ -122,7 +122,7 @@ object WebServer extends SprayJsonSupport {
 
     val tempDir = Files.createTempDirectory("csv_to_json")
     val baseUri = Uri(scheme = "http").withHost(host).withPort(port)
-    val controller = context.spawn(TaskController(tempDir), "TaskController")
+    val controller = context.spawn(TaskController(TaskWorker.apply, tempDir), "TaskController")
     val serverBinding: Future[Http.ServerBinding] = Http().newServerAt(host, port).bind(route(controller, baseUri))
 
     context.pipeToSelf(serverBinding) {

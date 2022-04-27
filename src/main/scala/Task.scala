@@ -27,7 +27,7 @@ object Task {
   }
 
   final case class Scheduled private(id: Task.Id, uri: URI) extends Task {
-    def run(worker: ActorRef[_], result: Path): Running = Running(id, (0, 0), result, worker)
+    def run(worker: ActorRef[_], result: Path): Running = Running(id, (0, 0L), result, worker)
     def cancel: Option[Task] = Some(Canceled(id, (0, 0)))
     override protected def jsonFields(resultLoc: Id => String): Seq[JsField] =
       super.jsonFields(resultLoc) :+ ("source" -> uri.toString.toJson)
@@ -63,6 +63,6 @@ object Task {
   private def progressFields(progress: Progress): Seq[JsField] = {
     val (lines, elapsed) = progress
     val rate = if (elapsed == 0) 0.0f else lines.toFloat * 1000 / elapsed
-    Seq("lines" -> lines.toJson, "rate" -> f"$rate%.3f".toJson)
+    Seq("lines" -> lines.toJson, "rate" -> rate.toJson)
   }
 }
