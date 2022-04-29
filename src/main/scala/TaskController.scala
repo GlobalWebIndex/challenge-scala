@@ -24,21 +24,24 @@ object TaskController {
   final case object CancelNotFound extends CancelResponse
   final case object CancelNotCancellable extends CancelResponse
 
-  def apply(workerFactory: TaskWorkerFactory, tempDir: Path, runningLimit: Int = 2): Behavior[Command] =
+  def apply(workerFactory: TaskWorkerFactory, tempDir: Path, runningLimit: Int): Behavior[Command] =
     Behaviors setup { context =>
       val workersReportTo: ActorRef[TaskWorker.ProgressReport] = context.messageAdapter(WrappedReport)
 
-      case class State(tasks: Map[Id, Task], nextScheduledId: Id, running: Int, queue: Queue[Scheduled])
-
-      def runningTaskOfChild(child: ActorRef[_], candidates: Iterable[Task]): Running =
-        candidates collectFirst { case t: Running if t.worker == child => t } getOrElse {
-          throw new InternalError(s"Actor $child is not associated with any running task")
-        }
+      case class State(tasks: Map[Id, Task], queue: Queue[Scheduled], nextScheduledId: Id, running: Map[ActorRef[_], Id])
 
       def controller(state: State): Behavior[Command] = {
         import state._
 
-        if (running < runningLimit && queue.nonEmpty) {
+        def runningTaskOfChild(child: ActorRef[_]): Running =
+          running get child flatMap tasks.get collect { case t: Running => t } getOrElse
+            { throw new InternalError(s"Actor $child is not associated with any running task") }
+
+        def workerOfRunningTask(task: Running): ActorRef[_] =
+          running.toSeq collectFirst { case w -> id if id == task.id => w } getOrElse
+            { throw new InternalError(s"Running task ${task.id} has no associated task worker actor") }
+
+        if (running.size < runningLimit && queue.nonEmpty) {
           val ready = queue.head
           val result = tempDir.resolve(s"task-${ready.id}.json")
           context.log.debug("Starting task: {} (with result temporary file {})", ready.id, result)
@@ -50,11 +53,11 @@ object TaskController {
           )
           context.watch(worker)
 
-          val started = ready.run(worker, result)
+          val started = ready.run(result)
           controller(state.copy(
             tasks = tasks.updated(started.id, started),
-            running = running + 1,
-            queue = queue.tail
+            queue = queue.tail,
+            running = running.updated(worker, started.id)
           ))
 
         } else Behaviors.receiveMessage[Command] {
@@ -65,8 +68,8 @@ object TaskController {
             replyTo ! task.id
             controller(state.copy(
               tasks = tasks.updated(task.id, task),
-              nextScheduledId = nextScheduledId.next,
-              queue = queue :+ task
+              queue = queue :+ task,
+              nextScheduledId = nextScheduledId.next
             ))
 
           case ListTasks(replyTo) =>
@@ -86,13 +89,13 @@ object TaskController {
               cancelled <- task.cancel
             } yield {
               replyTo ! CancelOk
-              val updatedTasks = tasks.updated(id, cancelled)
               task match {
                 case working: Running =>
-                  context.unwatch(working.worker)
-                  context.stop(working.worker)
-                  controller(state.copy(tasks = updatedTasks, running = running - 1))
-                case _ => controller(state.copy(tasks = updatedTasks, queue = queue filterNot (_.id == id)))
+                  val worker = workerOfRunningTask(working)
+                  context.unwatch(worker)
+                  context.stop(worker)
+                  controller(state.copy(tasks = tasks.updated(id, cancelled), running = running.removed(worker)))
+                case _ => controller(state.copy(tasks = tasks.updated(id, cancelled), queue = queue filterNot (_.id == id)))
               }
             }
 
@@ -105,21 +108,21 @@ object TaskController {
             context.log.debug("Progress of {}: {}", id, p)
             tasks get id match {
               case Some(task: Running) =>
-                controller(state.copy(tasks = tasks.updated(id, task update p)))
+                controller(state.copy(tasks = tasks.updated(id, task advanceTo p)))
               case _ => Behaviors.same
             }
 
         } receiveSignal {
 
           case (_, Terminated(child)) =>
-            val task = runningTaskOfChild(child, tasks.values)
+            val task = runningTaskOfChild(child)
             context.log.info("Task {} finished", task.id)
-            controller(state.copy(tasks = tasks.updated(task.id, task.done), running = running - 1))
+            controller(state.copy(tasks = tasks.updated(task.id, task.finish), running = running.removed(child)))
 
           case (_, ChildFailed(child, cause)) =>
-            val task = runningTaskOfChild(child, tasks.values)
+            val task = runningTaskOfChild(child)
             context.log.error("Task {} failed ({})", task.id, cause)
-            controller(state.copy(tasks = tasks.updated(task.id, task fail cause), running = running - 1))
+            controller(state.copy(tasks = tasks.updated(task.id, task fail cause), running = running.removed(child)))
 
           case (_, s) =>
             context.log.debug("Signal {} received", s)
@@ -127,6 +130,6 @@ object TaskController {
         }
       }
 
-      controller(State(Map.empty, initialId, 0, Queue.empty))
+      controller(State(Map.empty, Queue.empty, initialId, Map.empty))
     }
 }

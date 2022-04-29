@@ -15,28 +15,11 @@ import java.nio.file.Path
 import scala.annotation.unused
 
 class TaskControllerSpec extends AnyWordSpec with BeforeAndAfterAll with Matchers {
-  import Task._
+  import TaskControllerSpec._
   import TaskController._
-  import TaskWorker.ProgressReport
+  import Task._
 
   val testKit = ActorTestKit()
-
-  sealed trait WorkerCommand
-  final case object WorkerStop extends WorkerCommand
-  final case class SendProgress(p: Progress) extends WorkerCommand
-  final case class WorkerSpawned(id: Id, ref: ActorRef[WorkerCommand])
-
-  def workerMock(spawnListener: Option[ActorRef[WorkerSpawned]])
-                (id: Task.Id, @unused from: URI, @unused result: Path, reportTo: ActorRef[ProgressReport]): Behavior[Nothing] =
-    (Behaviors setup[WorkerCommand] { context =>
-      spawnListener foreach (_ ! WorkerSpawned(id, context.self))
-      Behaviors receiveMessage[WorkerCommand] {
-        case WorkerStop => Behaviors.stopped
-        case SendProgress(p) =>
-          reportTo ! TaskWorker.ProgressReport(id, p)
-          Behaviors.same
-      }
-    }).narrow
 
   implicit class ControllerOps(val controller: ActorRef[Command])
                               (implicit createTaskProbe: TestProbe[Id],
@@ -60,7 +43,7 @@ class TaskControllerSpec extends AnyWordSpec with BeforeAndAfterAll with Matcher
   }
 
   def taskControllerBehavior(sl: Option[ActorRef[WorkerSpawned]] = None): Behavior[Command] =
-    TaskController(workerMock(sl), Path.of("/tmp"))
+    TaskController(workerMock(sl), Path.of("/tmp"), runningLimit = 2)
 
   "TaskController" must {
     implicit val createTaskProbe: TestProbe[Id] = testKit.createTestProbe[Id]()
@@ -137,4 +120,26 @@ class TaskControllerSpec extends AnyWordSpec with BeforeAndAfterAll with Matcher
   }
 
   override def afterAll(): Unit = testKit.shutdownTestKit()
+}
+
+object TaskControllerSpec {
+  import Task._
+  import TaskWorker.ProgressReport
+
+  sealed trait WorkerCommand
+  final case object WorkerStop extends WorkerCommand
+  final case class SendProgress(p: Progress) extends WorkerCommand
+  final case class WorkerSpawned(id: Id, ref: ActorRef[WorkerCommand])
+
+  def workerMock(spawnListener: Option[ActorRef[WorkerSpawned]])
+                (id: Task.Id, @unused from: URI, @unused result: Path, reportTo: ActorRef[ProgressReport]): Behavior[Nothing] =
+    (Behaviors setup[WorkerCommand] { context =>
+      spawnListener foreach (_ ! WorkerSpawned(id, context.self))
+      Behaviors receiveMessage[WorkerCommand] {
+        case WorkerStop => Behaviors.stopped
+        case SendProgress(p) =>
+          reportTo ! ProgressReport(id, p)
+          Behaviors.same
+      }
+    }).narrow
 }

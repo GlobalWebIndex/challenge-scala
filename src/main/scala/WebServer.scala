@@ -122,7 +122,7 @@ object WebServer extends SprayJsonSupport {
 
     val tempDir = Files.createTempDirectory("csv_to_json")
     val baseUri = Uri(scheme = "http").withHost(host).withPort(port)
-    val controller = context.spawn(TaskController(TaskWorker.apply, tempDir), "TaskController")
+    val controller = context.spawn(TaskController(TaskWorker.apply, tempDir, runningLimit = 2), "TaskController")
     val serverBinding: Future[Http.ServerBinding] = Http().newServerAt(host, port).bind(route(controller, baseUri))
 
     context.pipeToSelf(serverBinding) {
