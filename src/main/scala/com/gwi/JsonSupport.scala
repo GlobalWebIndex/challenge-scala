@@ -1,17 +1,9 @@
 package com.gwi
 
-import spray.json.DefaultJsonProtocol
 import akka.http.scaladsl.marshallers.sprayjson.SprayJsonSupport
-import spray.json.DefaultJsonProtocol
-import spray.json.DeserializationException
-import spray.json.JsString
-import spray.json.JsValue
-import spray.json.RootJsonFormat
-import com.gwi.Job._
 import akka.http.scaladsl.model.Uri
-import spray.json.JsArray
-import spray.json.JsNumber
-import spray.json.JsObject
+import com.gwi.Job._
+import spray.json.{DefaultJsonProtocol, DeserializationException, JsString, JsValue, RootJsonFormat}
 
 trait JsonSupport extends SprayJsonSupport with DefaultJsonProtocol {
 
@@ -30,7 +22,7 @@ trait JsonSupport extends SprayJsonSupport with DefaultJsonProtocol {
       case JsString("Done")      => Done
       case JsString("Canceled")  => Canceled
       case JsString("Failed")    => Failed
-      case _                     => throw new DeserializationException("Status unexpected")
+      case _                     => throw DeserializationException("Status unexpected")
     }
   }
 
@@ -39,13 +31,25 @@ trait JsonSupport extends SprayJsonSupport with DefaultJsonProtocol {
 
     def read(json: JsValue): Uri = json match {
       case JsString(uri) => Uri(uri)
-      case x             => throw new DeserializationException(s"Uri unexpected x")
+      case _             => throw DeserializationException(s"Uri unexpected x")
     }
   }
 
+//  implicit object ResponseFormat extends RootJsonFormat[TaskRepository.Response] {
+//    def write(response: TaskRepository.Response): JsValue = response match {
+//      case x: TaskRepository.Failed => taskFailedJsonFormat.write(x)
+//      case x: TaskRepository.TaskCreated => taskCreatedJsonFormat.write(x)
+//      case x: TaskRepository.TaskDeleted => taskDeletedJsonFormat.write(x)
+//    }
+//
+//    def read(json: JsValue): Status = json match {
+//
+//      case _                     => throw DeserializationException("Status unexpected")
+//    }
+//  }
 
-  implicit val taskJsonFormat        = jsonFormat1(TaskRepository.Task)
-  implicit val taskCreatedJsonFormat = jsonFormat1(TaskRepository.TaskCreated)
-  implicit val taskDeletedJsonFormat = jsonFormat1(TaskRepository.TaskDeleted)
-  implicit val taskStatusJsonFormat  = jsonFormat5(Job.TaskStatus)
+  implicit val taskJsonFormat           = jsonFormat1(TaskRepository.Task)
+  implicit val taskCreatedJsonFormat    = jsonFormat1(TaskRepository.TaskCreated)
+  implicit val taskDeletedJsonFormat    = jsonFormat1(TaskRepository.TaskDeleted)
+  implicit val taskStatusJsonFormat     = jsonFormat5(Job.TaskStatus)
 }
