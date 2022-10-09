@@ -7,6 +7,7 @@
 /test/files/lib/*.jar
 /test/files/speclib/instrumented.jar
 /tools/*.jar
+/jsons
 
 # Developer specific properties
 /build.properties
