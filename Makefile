@@ -20,6 +20,6 @@ test: start-services compile
 	@sbt test
 
 ###  docker-build         	: Cross build docker image and publish locally
-.PHONY: docker-build
-docker-build:
+.PHONY: docker-buildx
+docker-buildx:
 	@sbt docker:publishLocal

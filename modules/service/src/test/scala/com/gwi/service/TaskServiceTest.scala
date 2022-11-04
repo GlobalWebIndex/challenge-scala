@@ -9,6 +9,7 @@ import com.gwi.database.model.memory.TaskState
 import com.gwi.database.model.memory.dao.TaskRepository
 import com.gwi.database.model.persistent.dao.JsonLineRepository
 import com.gwi.service.client.HttpClient
+import com.gwi.service.dto.GetJsonLinesError.GetJsonLinesError
 import com.gwi.service.dto.{TaskCanceledResult, TaskDto}
 import org.mockito.ArgumentMatchers.anyString
 import org.mockito.Mockito.when
@@ -178,7 +179,10 @@ class TaskServiceTest
         assert(task.flatMap(_.result).nonEmpty)
         assert(task.map(_.state).contains(TaskState.DONE.toString))
       })
-      val jsonLinesF = taskService.getJsonLines(taskId).runWith(Sink.collection[String, List[String]])
+
+      val jsonLinesResult = taskService.getJsonLines(taskId)
+      assert(jsonLinesResult.isLeft)
+      val jsonLinesF = jsonLinesResult.left.getOrElse(throw new RuntimeException).runWith(Sink.collection[String, List[String]])
       jsonLinesF.map(jsonLines => {
         assert(jsonLines.nonEmpty)
       })

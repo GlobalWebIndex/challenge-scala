@@ -10,11 +10,11 @@ import com.gwi.database.model.memory.dao.TaskRepository
 import com.gwi.database.model.memory.{Task, TaskState}
 import com.gwi.database.model.persistent.JsonLine
 import com.gwi.database.model.persistent.dao.{DoneTaskFromJsonLines, JsonLineRepository}
-import com.gwi.service.dto.TaskCanceledResult
+import com.gwi.service.dto.{GetJsonLinesError, TaskCanceledResult, TaskCompletion, TaskDto}
 import com.gwi.service.client.HttpClient
 import com.gwi.service.config.AppConfig
+import com.gwi.service.dto.GetJsonLinesError.GetJsonLinesError
 import com.gwi.service.dto.TaskCanceledResult.TaskCanceledResult
-import com.gwi.service.dto.{TaskCompletion, TaskDto}
 import com.gwi.service.exception.TaskCanceledException
 import com.gwi.service.flow.TaskFlowService
 import com.typesafe.scalalogging.LazyLogging
@@ -103,12 +103,19 @@ class TaskService @Inject() (
   def createJsonLineRetrieveUrl(taskId: UUID): String =
     s"http://${config.server.ip}:${config.server.port}/task/result/$taskId"
 
-  def getJsonLines(taskId: UUID): Source[String, NotUsed] = jsonLineRepository
-    .getJsonLines(taskId)
-    .map(js => {
-      logger.info(s"$js")
-      js.line
-    })
+  def getJsonLines(taskId: UUID): Either[Source[String, NotUsed], GetJsonLinesError] =
+    taskRepository.get(taskId) match {
+      case Some(task) if task.state == TaskState.DONE =>
+        Left(
+          jsonLineRepository
+            .getJsonLines(taskId)
+            .map(_.line)
+        )
+      case Some(_) =>
+        Right(GetJsonLinesError.NOT_DONE_STATE)
+      case _ =>
+        Right(GetJsonLinesError.NOT_FOUND)
+    }
 
   def createTask(url: String): UUID = {
     val taskId = UUID.randomUUID()

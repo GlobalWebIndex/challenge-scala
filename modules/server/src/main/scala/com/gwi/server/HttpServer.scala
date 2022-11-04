@@ -12,7 +12,7 @@ import com.typesafe.scalalogging.LazyLogging
 import com.gwi.server.request.CreateTaskRequest
 import com.gwi.server.response.{CreateTaskResponse, ReadinessResponse, TaskCancelErrorResponse}
 import com.gwi.service.config.AppConfig
-import com.gwi.service.dto.TaskCanceledResult
+import com.gwi.service.dto.{GetJsonLinesError, TaskCanceledResult}
 import com.gwi.service.TaskService
 import spray.json.DefaultJsonProtocol
 
@@ -66,7 +66,14 @@ class HttpServer @Inject() (taskService: TaskService, config: AppConfig)(implici
           },
           path("result") {
             (get & path(JavaUUID)) { taskId =>
-              complete(taskService.getJsonLines(taskId))
+              taskService.getJsonLines(taskId) match {
+                case Left(lineSource) =>
+                  complete(lineSource)
+                case Right(GetJsonLinesError.NOT_DONE_STATE) =>
+                  complete(StatusCodes.BadRequest)
+                case _ =>
+                  complete(StatusCodes.NotFound)
+              }
             }
           }
         )

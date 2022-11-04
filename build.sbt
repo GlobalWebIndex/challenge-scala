@@ -3,6 +3,8 @@ import sbt._
 
 val ProjectScalaVersion = "2.13.8"
 
+scalafmtOnCompile := true
+
 inThisBuild(
   List(
     developers := List(

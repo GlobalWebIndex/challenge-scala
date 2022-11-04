@@ -50,6 +50,7 @@ The endpoint that provides info about a task also streams its response until the
 ### Architecture
 Its architecture is based on the 3-tier model, mostly for simplicity, as its structure is not very complex.
 Each tier is located in a separate module, mostly to demonstrate the loose coupling of the layers.
+**Notice**: the database and service layer have their own entities, but the controller layer has only where it makes sense.
 
 ### Business flow
 Regarding the flow responsible for the transformation, I implemented the boundary of 2 concurrent task execution using a `BoundedSourceQueue` that creates an inner stream from the url of the task.
@@ -81,6 +82,18 @@ The project requires
 
 ### Usage
 
+#### Enviromental variables
+You can configure some parameters using environmental variables. There is the `env.template` file which you can use as reference to pass your own values
+You can find the variables and their usage in the table below
+
+| Variable name        | Default value                      | Description      |
+|----------------------|------------------------------------|------------------|
+| `POSTGRES_URL`       | URL for PostgreSQL instance        | `localhost:5432` |
+| `POSTGRES_DB`        | name of database to connect to     | `gwi`            |
+| `POSTGRES_USERNAME`  | username of PG user                | `gwi`            |
+| `POSTGRES_PASSWORD`  | password of PG user                | `gwi`            | 
+| `CONCURRENCY_FACTOR` | number of concurrent tasks running | `2`              | 
+
 #### Compile, run, test
 You can use `make` commands to compile, run and test the app:
 
@@ -90,17 +103,29 @@ You can use `make` commands to compile, run and test the app:
 | ``make compile``        | Cleans and compiles the project                                                                                        |
 | ``make test``           | Starts the dockerized PostgreSQL, compiles the project and runs the tests                                              |
 | ``make run``            | Starts the application                                                                                                 |
-| ``make docker-build``   | Cross builds a docker image of the application and publish it locally                                                  |
+| ``make docker-buildx``  | Cross builds a docker image of the application and publish it locally                                                  |
 
 #### Endpoints
 
 All endpoints are using the `JSON` format for both requests and responses
 
-|Protocol|Path    |Description                                       | Request example | Response example     |
-|--------|--------|--------------------------------------------------|-----------------|----------------------|
-| `GET`  | `ready`| Responds if the app is ready to receive requests |                 | `{"isReady": true}`  |               
+| Protocol | Path             | Description                                                                                                                     | Status code         | Request example                                                                                                                                                                                       | Response example                                                                                                                                                                                       |
+|----------|------------------|---------------------------------------------------------------------------------------------------------------------------------|---------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `GET`    | `ready`          | Responds if the app is ready to receive requests                                                                                | `200`               |                                                                                                                                                                                                       | `{"isReady": true}`                                                                                                                                                                                   |               
+| `POST`   | `/task`          | Create a new task. It expects a url pointing to the CSV file and returns a UUID that is the task id                             | `202`               | `{"url": "https://www.sample-videos.com/csv/Sample-Spreadsheet-100-rows.csv"}`                                                                                                                        | `{"id": "237dc24b-52b7-4b12-a452-c49a80e5a1b3"}`                                                                                                                                                      |
+| `GET`    | `/task`          | Stream a list of all tasks. If done, a link to fetch the JSON data is included                                                  | `200`               | `[{"id": "237dc24b-52b7-4b12-a452-c49a80e5a1b3", "linesProcessed": 100, "averageLinesProccesed": 2, "state": "Done", "result": "http://localhost:8080/result/237dc24b-52b7-4b12-a452-c49a80e5a1b3"}]` |
+| `GET`    | `/task/[taskId]` | Return task details, if the task exists. This will stream the task details every 2 minutes, if the task is not in a final state | `200`, `404`        | `[{"id": "237dc24b-52b7-4b12-a452-c49a80e5a1b3", "linesProcessed": 100, "averageLinesProccesed": 2, "state": "Done", "result": "http://localhost:8080/result/237dc24b-52b7-4b12-a452-c49a80e5a1b3"}]` |
+| `DELETE` | `task/[taskId]`  | Cancel the task, if it is have not already completed                                                                            | `204`, `404`, `400` |                                                                                                                                                                                                       |      
+| `GET`    | `result/[taskId] | Stream the JSON lines that were derived from the CSV file                                                                       | `200`, `404`, `400` | |
+
+**Error responses**
+TODO
 
 ### Docker
+
+You can cross build a docker image of the application using the `make docker-buildx` command. This will publish locally the built image.
+Afterwards, you can run the app with the following command:
+`docker run gwi/scala-challenge -p 8080:8080 -e POSTGRES_URL=${POSTGRES_URL} -e POSTGRES_DB=${POSTGRES_DB} -e POSTGRES_USERNAME=${POSTGRES_USERNAME} -e POSTGRES_PASSWORD=${POSTGRES_PASSWORD} -e CONCURRENCY-FACTOR=${CONCURRENCY_FACTOR}`
 
 ### Known issues
 
