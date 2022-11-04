@@ -7,12 +7,13 @@ import akka.http.scaladsl.marshallers.sprayjson.SprayJsonSupport
 import akka.http.scaladsl.model.StatusCodes
 import akka.http.scaladsl.server.Directives._
 import akka.http.scaladsl.server.Route
-import com.google.inject.{Inject, Provides}
+import com.google.inject.Inject
 import com.typesafe.scalalogging.LazyLogging
 import com.gwi.server.request.CreateTaskRequest
 import com.gwi.server.response.{CreateTaskResponse, ReadinessResponse, TaskCancelErrorResponse}
 import com.gwi.service.config.AppConfig
-import com.gwi.service.{TaskCanceledResult, TaskService}
+import com.gwi.service.dto.TaskCanceledResult
+import com.gwi.service.TaskService
 import spray.json.DefaultJsonProtocol
 
 import javax.inject.Singleton
@@ -25,7 +26,6 @@ class HttpServer @Inject() (taskService: TaskService, config: AppConfig)(implici
 
   implicit val jsonStreamingSupport: common.JsonEntityStreamingSupport = EntityStreamingSupport.json()
 
-  @Provides
   def startServer(): Unit =
     Http().newServerAt(config.server.ip, config.server.port).bind(buildRoute())
 

@@ -3,6 +3,7 @@ package com.gwi.service.converter
 import akka.actor.ActorSystem
 import akka.stream.scaladsl.{FileIO, Sink}
 import akka.testkit.TestKit
+import com.gwi.service.flow.converter.CsvConverter
 import org.scalatest.BeforeAndAfterAll
 import org.scalatest.wordspec.AsyncWordSpecLike
 import spray.json.JsValue

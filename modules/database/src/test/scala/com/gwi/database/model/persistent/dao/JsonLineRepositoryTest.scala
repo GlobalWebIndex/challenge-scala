@@ -17,6 +17,11 @@ class JsonLineRepositoryTest
 
   val jsonLineRepository = new JsonLineRepository()
 
+  override def beforeEach(): Unit = {
+    import jsonLineRepository.session.profile.api._
+    jsonLineRepository.session.db.run(jsonLineRepository.jsonLine.delete)
+  }
+
   override def afterEach(): Unit = {
     import jsonLineRepository.session.profile.api._
     jsonLineRepository.session.db.run(jsonLineRepository.jsonLine.delete)

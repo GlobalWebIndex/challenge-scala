@@ -2,19 +2,18 @@ package com.gwi.service
 
 import akka.actor.ActorSystem
 import akka.stream.Materializer
-import akka.stream.scaladsl.{FileIO, Sink, Source}
+import akka.stream.scaladsl.{FileIO, Sink}
 import akka.testkit.TestKit
 import com.google.inject.{AbstractModule, Guice}
 import com.gwi.database.model.memory.TaskState
 import com.gwi.database.model.memory.dao.TaskRepository
 import com.gwi.database.model.persistent.dao.JsonLineRepository
 import com.gwi.service.client.HttpClient
-import com.gwi.service.config.AppConfig
-import com.gwi.service.dto.TaskDto
+import com.gwi.service.dto.{TaskCanceledResult, TaskDto}
 import org.mockito.ArgumentMatchers.anyString
 import org.mockito.Mockito.when
 import org.mockito.MockitoSugar.mock
-import org.scalatest.{BeforeAndAfterAll, BeforeAndAfterEach}
+import org.scalatest.{BeforeAndAfterAll, BeforeAndAfterEach, Succeeded}
 import org.scalatest.wordspec.AsyncWordSpecLike
 
 import java.nio.file.Paths
@@ -29,10 +28,18 @@ class TaskServiceTest
   override def afterAll(): Unit =
     TestKit.shutdownActorSystem(system)
 
+  override def beforeEach(): Unit = {
+    val jsonLineRepository = injector.getInstance(classOf[JsonLineRepository])
+    import jsonLineRepository.session.profile.api._
+    jsonLineRepository.session.db.run(jsonLineRepository.jsonLine.delete.transactionally)
+    val taskRepository = injector.getInstance(classOf[TaskRepository])
+    taskRepository.deleteAll()
+  }
+
   override def afterEach(): Unit = {
     val jsonLineRepository = injector.getInstance(classOf[JsonLineRepository])
     import jsonLineRepository.session.profile.api._
-    jsonLineRepository.session.db.run(jsonLineRepository.jsonLine.delete)
+    jsonLineRepository.session.db.run(jsonLineRepository.jsonLine.delete.transactionally)
     val taskRepository = injector.getInstance(classOf[TaskRepository])
     taskRepository.deleteAll()
   }
@@ -69,6 +76,13 @@ class TaskServiceTest
         assert(nextTasks.size == 1)
         assert(nextTasks.headOption.map(_.id).contains(taskId))
       })
+
+      //cleanup
+      taskService
+        .getAllTasks()
+        .runWith(Sink.collection[TaskDto, List[TaskDto]])
+        .foreach(taskOpt => taskOpt.foreach(task => taskService.cancelTask(task.id)))
+      Succeeded
     }
 
     "cancel a scheduled task" in {
@@ -82,6 +96,12 @@ class TaskServiceTest
         assert(task.map(_.id).contains(taskId))
         assert(task.map(_.state).contains(TaskState.CANCELED.toString))
       })
+      //cleanup
+      taskService
+        .getAllTasks()
+        .runWith(Sink.collection[TaskDto, List[TaskDto]])
+        .foreach(taskOpt => taskOpt.foreach(task => taskService.cancelTask(task.id)))
+      Succeeded
     }
 
     "cancel a running task" in {
@@ -106,6 +126,12 @@ class TaskServiceTest
         assert(task.map(_.id).contains(taskId))
         assert(task.map(_.state).contains(TaskState.CANCELED.toString))
       })
+      //cleanup
+      taskService
+        .getAllTasks()
+        .runWith(Sink.collection[TaskDto, List[TaskDto]])
+        .foreach(taskOpt => taskOpt.foreach(task => taskService.cancelTask(task.id)))
+      Succeeded
     }
 
     "respect the concurrency factor" in {
@@ -125,6 +151,12 @@ class TaskServiceTest
           // concurrency factor in test conf is 3
           assert(taskList.count(_.state == TaskState.RUNNING.toString) == 3)
         })
+      //cleanup
+      taskService
+        .getAllTasks()
+        .runWith(Sink.collection[TaskDto, List[TaskDto]])
+        .foreach(taskOpt => taskOpt.foreach(task => taskService.cancelTask(task.id)))
+      Succeeded
     }
 
     "get json file from a done task" in {
@@ -137,15 +169,10 @@ class TaskServiceTest
         .getTaskInfo(taskId)
         .takeWhile(
           task => {
-            println(s"HERE $task")
             !task.map(_.state).contains(TaskState.DONE.toString)
           },
           inclusive = true
         )
-        .map(t => {
-          println(s" HERE ${t.get.state}")
-          t
-        })
         .runWith(Sink.last)
       doneTaskF.map(task => {
         assert(task.flatMap(_.result).nonEmpty)
@@ -153,9 +180,14 @@ class TaskServiceTest
       })
       val jsonLinesF = taskService.getJsonLines(taskId).runWith(Sink.collection[String, List[String]])
       jsonLinesF.map(jsonLines => {
-        println(jsonLines)
         assert(jsonLines.nonEmpty)
       })
+      //cleanup
+      taskService
+        .getAllTasks()
+        .runWith(Sink.collection[TaskDto, List[TaskDto]])
+        .foreach(taskOpt => taskOpt.foreach(task => taskService.cancelTask(task.id)))
+      Succeeded
     }
   }
 

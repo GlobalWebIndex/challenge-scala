@@ -3,19 +3,20 @@ package com.gwi.service
 import akka.NotUsed
 import akka.actor.{ActorSystem, Cancellable}
 import akka.stream.scaladsl.{Flow, Keep, Sink, Source}
-import akka.stream.{BoundedSourceQueue, KillSwitch, KillSwitches, Materializer, OverflowStrategy, QueueOfferResult}
+import akka.stream.{BoundedSourceQueue, KillSwitch, KillSwitches, OverflowStrategy, QueueOfferResult}
 import com.google.inject.{Inject, Singleton}
 import com.gwi.database.model.memory.TaskState.TaskState
 import com.gwi.database.model.memory.dao.TaskRepository
 import com.gwi.database.model.memory.{Task, TaskState}
 import com.gwi.database.model.persistent.JsonLine
 import com.gwi.database.model.persistent.dao.{DoneTaskFromJsonLines, JsonLineRepository}
-import com.gwi.service.TaskCanceledResult.TaskCanceledResult
+import com.gwi.service.dto.TaskCanceledResult
 import com.gwi.service.client.HttpClient
 import com.gwi.service.config.AppConfig
-import com.gwi.service.converter.CsvConverter
+import com.gwi.service.dto.TaskCanceledResult.TaskCanceledResult
 import com.gwi.service.dto.{TaskCompletion, TaskDto}
 import com.gwi.service.exception.TaskCanceledException
+import com.gwi.service.flow.TaskFlowService
 import com.typesafe.scalalogging.LazyLogging
 import spray.json.JsValue
 
@@ -24,20 +25,14 @@ import scala.collection.mutable
 import scala.concurrent.duration._
 import scala.concurrent.{ExecutionContext, Future}
 
-object TaskCanceledResult extends Enumeration {
-  type TaskCanceledResult = Value
-  val SUCCESS: TaskCanceledResult = Value("Success")
-  val NOT_FOUND: TaskCanceledResult = Value("Not Found")
-  val NOT_CANCELABLE_STATE: TaskCanceledResult = Value("Not Cancelable State")
-}
-
 @Singleton
 class TaskService @Inject() (
   taskRepository: TaskRepository,
   jsonLineRepository: JsonLineRepository,
   client: HttpClient,
+  taskFlowService: TaskFlowService,
   config: AppConfig
-)(implicit val actorSystem: ActorSystem, executionContext: ExecutionContext, materializer: Materializer)
+)(implicit val actorSystem: ActorSystem, executionContext: ExecutionContext)
     extends LazyLogging {
 
   private val queue: BoundedSourceQueue[(UUID, String)] = createQueue()
@@ -97,7 +92,6 @@ class TaskService @Inject() (
     .map(_ => taskRepository.get(taskId))
     .takeWhile(
       task => {
-        println(s"TASK $task")
         task.nonEmpty && !task
           .map(_.state)
           .exists(state => FINAL_STATES.contains(state))
@@ -153,12 +147,12 @@ class TaskService @Inject() (
         )
     }
 
-  private def markTaskComplete(taskId: UUID) = {
+  private def markTaskComplete(taskId: UUID): Unit = {
     logger.info(s"Task $taskId was completed")
     taskRepository
       .get(taskId)
       .foreach(task => taskRepository.upsert(task.copy(state = TaskState.DONE)))
-    jsonLineRepository.markJsonLinesCompleted(taskId).foreach(println)
+    jsonLineRepository.markJsonLinesCompleted(taskId)
   }
 
   private def markTaskFailed(taskId: UUID, taskState: TaskState): Future[Int] = {
@@ -206,7 +200,7 @@ class TaskService @Inject() (
                 .getCsvFile(url)
                 .buffer(config.backPressure.bufferSize, OverflowStrategy.backpressure)
                 .async
-                .via(CsvConverter.convertLineFlow)
+                .via(taskFlowService.createConsumeCsvFlowFlow())
                 .buffer(config.backPressure.bufferSize, OverflowStrategy.backpressure)
                 .async
                 .via(persistLineFlow(taskId))

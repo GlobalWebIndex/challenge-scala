@@ -1,4 +1,4 @@
-package com.gwi.service.converter
+package com.gwi.service.flow.converter
 
 import akka.NotUsed
 import akka.stream.alpakka.csv.scaladsl.{CsvParsing, CsvToMap}
