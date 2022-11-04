@@ -119,7 +119,9 @@ All endpoints are using the `JSON` format for both requests and responses
 | `GET`    | `result/[taskId] | Stream the JSON lines that were derived from the CSV file                                                                       | `200`, `404`, `400` | |
 
 **Error responses**
-TODO
+
+All error responses return a JSON body with a simple informative message. The format is the following:
+`{"message": "informative error message"}`
 
 ### Docker
 

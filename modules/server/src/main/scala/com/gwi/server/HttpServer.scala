@@ -6,11 +6,11 @@ import akka.http.scaladsl.common.EntityStreamingSupport
 import akka.http.scaladsl.marshallers.sprayjson.SprayJsonSupport
 import akka.http.scaladsl.model.StatusCodes
 import akka.http.scaladsl.server.Directives._
-import akka.http.scaladsl.server.Route
+import akka.http.scaladsl.server.{MethodRejection, RejectionHandler, Route}
 import com.google.inject.Inject
 import com.typesafe.scalalogging.LazyLogging
 import com.gwi.server.request.CreateTaskRequest
-import com.gwi.server.response.{CreateTaskResponse, ReadinessResponse, TaskCancelErrorResponse}
+import com.gwi.server.response.{CreateTaskResponse, ErrorResponse, ReadinessResponse}
 import com.gwi.service.config.AppConfig
 import com.gwi.service.dto.{GetJsonLinesError, TaskCanceledResult}
 import com.gwi.service.TaskService
@@ -29,7 +29,7 @@ class HttpServer @Inject() (taskService: TaskService, config: AppConfig)(implici
   def startServer(): Unit =
     Http().newServerAt(config.server.ip, config.server.port).bind(buildRoute())
 
-  def buildRoute(): Route = {
+  def buildRoute(): Route = handleRejections(rejectionHandler()){
     concat(
       pathPrefix("ready") {
         get {
@@ -59,9 +59,9 @@ class HttpServer @Inject() (taskService: TaskService, config: AppConfig)(implici
               case TaskCanceledResult.SUCCESS =>
                 complete(StatusCodes.NoContent)
               case TaskCanceledResult.NOT_FOUND =>
-                complete(StatusCodes.NotFound, TaskCancelErrorResponse(s"Task $id is not found"))
+                complete(StatusCodes.NotFound, ErrorResponse(s"Task $id is not found"))
               case TaskCanceledResult.NOT_CANCELABLE_STATE =>
-                complete(StatusCodes.BadRequest, TaskCancelErrorResponse(s"Task $id is in not cancelable state"))
+                complete(StatusCodes.BadRequest, ErrorResponse(s"Task $id is in not cancelable state"))
             }
           },
           path("result") {
@@ -70,15 +70,27 @@ class HttpServer @Inject() (taskService: TaskService, config: AppConfig)(implici
                 case Left(lineSource) =>
                   complete(lineSource)
                 case Right(GetJsonLinesError.NOT_DONE_STATE) =>
-                  complete(StatusCodes.BadRequest)
+                  complete(StatusCodes.BadRequest, ErrorResponse(s"Task $taskId is not in done state"))
                 case _ =>
-                  complete(StatusCodes.NotFound)
+                  complete(StatusCodes.NotFound, ErrorResponse(s"Task $taskId not found"))
               }
             }
           }
         )
       }
     )
+  }
+
+  def rejectionHandler(): RejectionHandler = {
+    RejectionHandler.newBuilder()
+      .handleNotFound {
+        complete(StatusCodes.NotFound, ErrorResponse("Not found"))
+      }
+      .handleAll[MethodRejection] { methodRejections =>
+        val names = methodRejections.map(_.supported.name)
+        complete(StatusCodes.MethodNotAllowed, ErrorResponse(s"Can't do that! Supported: ${names.mkString(" or ")}!"))
+      }
+      .result()
   }
 
 }
