@@ -52,14 +52,19 @@ class HttpServer @Inject() (taskService: TaskService, config: AppConfig)(implici
             )
           },
           (get & path(JavaUUID)) { id =>
-            complete(taskService.getTaskInfo(id))
+            taskService.getTaskInfo(id) match {
+            case Left(taskSource) =>
+              complete(taskSource)
+            case _ =>
+              complete(StatusCodes.NotFound, ErrorResponse(s"Task $id not found"))
+          }
           },
           (delete & path(JavaUUID)) { id =>
             taskService.cancelTask(id) match {
               case TaskCanceledResult.SUCCESS =>
                 complete(StatusCodes.NoContent)
               case TaskCanceledResult.NOT_FOUND =>
-                complete(StatusCodes.NotFound, ErrorResponse(s"Task $id is not found"))
+                complete(StatusCodes.NotFound, ErrorResponse(s"Task $id not found"))
               case TaskCanceledResult.NOT_CANCELABLE_STATE =>
                 complete(StatusCodes.BadRequest, ErrorResponse(s"Task $id is in not cancelable state"))
             }

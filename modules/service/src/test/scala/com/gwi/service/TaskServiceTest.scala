@@ -9,7 +9,6 @@ import com.gwi.database.model.memory.TaskState
 import com.gwi.database.model.memory.dao.TaskRepository
 import com.gwi.database.model.persistent.dao.JsonLineRepository
 import com.gwi.service.client.HttpClient
-import com.gwi.service.dto.GetJsonLinesError.GetJsonLinesError
 import com.gwi.service.dto.{TaskCanceledResult, TaskDto}
 import org.mockito.ArgumentMatchers.anyString
 import org.mockito.Mockito.when
@@ -18,7 +17,9 @@ import org.scalatest.{BeforeAndAfterAll, BeforeAndAfterEach, Succeeded}
 import org.scalatest.wordspec.AsyncWordSpecLike
 
 import java.nio.file.Paths
-import scala.concurrent.ExecutionContext
+import java.util.concurrent.TimeUnit
+import scala.concurrent.duration.FiniteDuration
+import scala.concurrent.{Await, ExecutionContext}
 
 class TaskServiceTest
     extends TestKit(ActorSystem("TaskServiceTestSpec"))
@@ -68,7 +69,9 @@ class TaskServiceTest
       val initialTasksF = taskService.getAllTasks().runWith(Sink.collection[TaskDto, List[TaskDto]])
       initialTasksF.map(initialTasks => assert(initialTasks.isEmpty))
       val taskId = taskService.createTask("randomUrl")
-      val taskF = taskService.getTaskInfo(taskId).runWith(Sink.head)
+      val taskResult = taskService.getTaskInfo(taskId)
+      assert(taskResult.isLeft)
+      val taskF = taskResult.left.getOrElse(throw new RuntimeException).runWith(Sink.head)
       taskF.map(task => {
         assert(task.map(_.state).contains(TaskState.SCHEDULED.toString))
       })
@@ -92,7 +95,9 @@ class TaskServiceTest
       initialTasksF.map(initialTasks => assert(initialTasks.isEmpty))
       val taskId = taskService.createTask("randomUrl")
       assert(taskService.cancelTask(taskId) == TaskCanceledResult.SUCCESS)
-      val canceledTask = taskService.getTaskInfo(taskId).runWith(Sink.head)
+      val taskResult = taskService.getTaskInfo(taskId)
+      assert(taskResult.isLeft)
+      val canceledTask = taskResult.left.getOrElse(throw new RuntimeException).runWith(Sink.head)
       canceledTask.map(task => {
         assert(task.map(_.id).contains(taskId))
         assert(task.map(_.state).contains(TaskState.CANCELED.toString))
@@ -110,8 +115,9 @@ class TaskServiceTest
       val initialTasksF = taskService.getAllTasks().runWith(Sink.collection[TaskDto, List[TaskDto]])
       initialTasksF.map(initialTasks => assert(initialTasks.isEmpty))
       val taskId = taskService.createTask("randomUrl")
-      val runningTask = taskService
-        .getTaskInfo(taskId)
+      val taskResult = taskService.getTaskInfo(taskId)
+      assert(taskResult.isLeft)
+      val runningTask = taskResult.left.getOrElse(throw new RuntimeException)
         .takeWhile(task => !task.map(_.state).contains(TaskState.RUNNING.toString), inclusive = true)
         .runWith(Sink.last)
       taskService.cancelTask(taskId)
@@ -119,8 +125,10 @@ class TaskServiceTest
         assert(task.map(_.id).contains(taskId))
         assert(task.map(_.state).contains(TaskState.RUNNING.toString))
       })
-      val canceledTask = taskService
-        .getTaskInfo(taskId)
+
+      val newTaskResult = taskService.getTaskInfo(taskId)
+      assert(newTaskResult.isLeft)
+      val canceledTask = taskResult.left.getOrElse(throw new RuntimeException)
         .takeWhile(task => !task.map(_.state).contains(TaskState.CANCELED.toString), inclusive = true)
         .runWith(Sink.last)
       canceledTask.map(task => {
@@ -166,8 +174,9 @@ class TaskServiceTest
       initialTasksF.map(initialTasks => assert(initialTasks.isEmpty))
       val taskId = taskService.createTask("randomUrl")
 
-      val doneTaskF = taskService
-        .getTaskInfo(taskId)
+      val taskResult = taskService.getTaskInfo(taskId)
+      assert(taskResult.isLeft)
+      val doneTaskF = taskResult.left.getOrElse(throw new RuntimeException)
         .takeWhile(
           task => {
             !task.map(_.state).contains(TaskState.DONE.toString)
@@ -175,10 +184,9 @@ class TaskServiceTest
           inclusive = true
         )
         .runWith(Sink.last)
-      doneTaskF.map(task => {
-        assert(task.flatMap(_.result).nonEmpty)
-        assert(task.map(_.state).contains(TaskState.DONE.toString))
-      })
+      val task = Await.result(doneTaskF, FiniteDuration(1, TimeUnit.MINUTES))
+      assert(task.flatMap(_.result).nonEmpty)
+      assert(task.map(_.state).contains(TaskState.DONE.toString))
 
       val jsonLinesResult = taskService.getJsonLines(taskId)
       assert(jsonLinesResult.isLeft)

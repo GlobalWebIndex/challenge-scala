@@ -41,6 +41,7 @@ object Dependencies {
   lazy val akkaSpray = "com.typesafe.akka" %% "akka-http-spray-json" % version.AkkaHttpVersion
   lazy val alpakkaCsv = "com.lightbend.akka" %% "akka-stream-alpakka-csv" % version.AlpakkaVersion
   lazy val akkaStreamsTestKit = "com.typesafe.akka" %% "akka-stream-testkit" % version.AkkaVersion % Test
+  lazy val akkaHttpTestKit = "com.typesafe.akka" %% "akka-http-testkit" % version.AkkaHttpVersion % Test
 
   lazy val slick = Seq(
     "org.postgresql" % "postgresql" % version.PostgresVersion,

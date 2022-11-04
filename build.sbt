@@ -50,7 +50,10 @@ lazy val server = project
       Dependencies.akkaActor,
       Dependencies.akkaStream,
       Dependencies.akkaHttp,
-      Dependencies.akkaSpray
+      Dependencies.akkaSpray,
+      Dependencies.akkaStreamsTestKit,
+      Dependencies.akkaHttpTestKit,
+      Dependencies.mockito
     )
   )
   .settings(libraryDependencies += Dependencies.scalaTest)
@@ -59,6 +62,6 @@ lazy val server = project
     Docker / packageName := "gwi/scala-challenge",
     packageDescription := "The Scala challenge implementation by sgeorgakis",
     dockerBaseImage := "adoptopenjdk:11-jre-hotspot", // arm compatible base image
-    dockerUpdateLatest := true, // docker:publishLocal will replace the latest tagged image.
+    dockerUpdateLatest := true,
     dockerExposedPorts ++= Seq(8080)
   )

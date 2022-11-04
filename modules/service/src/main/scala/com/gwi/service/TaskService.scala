@@ -74,7 +74,7 @@ class TaskService @Inject() (
 
     if (taskOpt.isEmpty) {
       TaskCanceledResult.NOT_FOUND
-    } else if (taskOpt.nonEmpty && abortedOpt.isEmpty) {
+    } else if (abortedOpt.isEmpty) {
       TaskCanceledResult.NOT_CANCELABLE_STATE
     } else {
       TaskCanceledResult.SUCCESS
@@ -87,18 +87,21 @@ class TaskService @Inject() (
     )
     .map(mapTaskToDto)
 
-  def getTaskInfo(taskId: UUID): Source[Option[TaskDto], Cancellable] = Source
-    .tick(0.seconds, 2.seconds, ())
-    .map(_ => taskRepository.get(taskId))
-    .takeWhile(
-      task => {
-        task.nonEmpty && !task
-          .map(_.state)
-          .exists(state => FINAL_STATES.contains(state))
-      },
-      inclusive = true
-    )
-    .map(_.map(mapTaskToDto))
+  def getTaskInfo(taskId: UUID): Either[Source[Option[TaskDto], Cancellable], Unit] = {
+    taskRepository.get(taskId).map(_ =>
+    Left(Source
+      .tick(0.seconds, 2.seconds, ())
+      .map(_ => taskRepository.get(taskId))
+      .takeWhile(
+        task => {
+          task.nonEmpty && !task
+            .map(_.state)
+            .exists(state => FINAL_STATES.contains(state))
+        },
+        inclusive = true
+      )
+      .map(_.map(mapTaskToDto)))).getOrElse(Right())
+  }
 
   def createJsonLineRetrieveUrl(taskId: UUID): String =
     s"http://${config.server.ip}:${config.server.port}/task/result/$taskId"
