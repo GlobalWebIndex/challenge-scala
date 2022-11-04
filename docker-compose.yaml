@@ -1,0 +1,13 @@
+version: '3.0'
+
+services:
+  postgres:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: gwi
+      POSTGRES_USER: gwi
+      POSTGRES_PASSWORD: dev
+    ports:
+      - 5432:5432
+    volumes:
+      - ./docker/docker_postgres_init.sql:/docker-entrypoint-initdb.d/docker_postgres_init.sql

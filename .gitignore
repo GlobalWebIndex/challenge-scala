@@ -1,2 +1,25 @@
-*.class
+# Covers JetBrains IDEs: IntelliJ, RubyMine, PhpStorm, AppCode, PyCharm
+*.iml
+.idea/
+.run/
+
+# Eclipse
+.classpath
+.project
+.settings/
+
+# Maven
+target/
+
+# Various files
+*~
 *.log
+*.class
+.DS_Store
+._*
+/.env
+
+DeleteMe*
+IgnoreMe*
+
+ignoreme*
