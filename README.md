@@ -90,6 +90,7 @@ You can use `make` commands to compile, run and test the app:
 | ``make compile``        | Cleans and compiles the project                                                                                        |
 | ``make test``           | Starts the dockerized PostgreSQL, compiles the project and runs the tests                                              |
 | ``make run``            | Starts the application                                                                                                 |
+| ``make docker-build``   | Cross builds a docker image of the application and publish it locally                                                  |
 
 #### Endpoints
 
@@ -108,4 +109,4 @@ More specifically, I tried various implementations for rollbacking transactions 
 but none seemed to work, as implicit values seem to be the problem.
 I decided to go with a simple solution, as the database needs are simple as well and delete all records before and after each test.
 I had to do it for both before and each, as there were flows running until the test `ActorSystem` was terminated, inserting records in the database.
-This is not really an issue, as I am using another database within PG for tests.
+This is not an optiomal solution, but it does not cause any issues, as I am using another database within PG for tests.

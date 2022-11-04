@@ -3,7 +3,13 @@ import sbt._
 
 val ProjectScalaVersion = "2.13.8"
 
-//Test / parallelExecution := true
+inThisBuild(
+  List(
+    developers := List(
+      Developer("sgeorgakis", "Stefanos Georgakis", "s_georgakis@hotmail.com", url("https://github.com/sgeorgakis"))
+    )
+  )
+)
 
 lazy val database = project
   .in(file("modules/database"))
@@ -32,6 +38,7 @@ lazy val service = project
 
 lazy val server = project
   .in(file("modules/server"))
+  .enablePlugins(JavaAppPackaging, DockerPlugin)
   .settings(scalaVersion := ProjectScalaVersion)
   .dependsOn(service)
   .settings(libraryDependencies ++= Dependencies.logging)
@@ -46,4 +53,10 @@ lazy val server = project
   )
   .settings(libraryDependencies += Dependencies.scalaTest)
   .settings(Compile / mainClass := Some("com.gwi.server.MainApp"))
-//.settings(run / mainClass := Some("com.gwi.server.HttpServer"))
+  .settings(
+    Docker / packageName := "gwi/scala-challenge",
+    packageDescription := "The Scala challenge implementation by sgeorgakis",
+    dockerBaseImage := "adoptopenjdk:11-jre-hotspot", // arm compatible base image
+    dockerUpdateLatest := true, // docker:publishLocal will replace the latest tagged image.
+    dockerExposedPorts ++= Seq(8080)
+  )
