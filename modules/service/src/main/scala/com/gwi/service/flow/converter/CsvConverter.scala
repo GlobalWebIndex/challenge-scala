@@ -2,7 +2,7 @@ package com.gwi.service.flow.converter
 
 import akka.NotUsed
 import akka.stream.alpakka.csv.scaladsl.{CsvParsing, CsvToMap}
-import akka.stream.scaladsl.{Flow, GraphDSL, Source, Unzip, Zip, ZipWith}
+import akka.stream.scaladsl.{Flow, GraphDSL, Unzip, Zip}
 import akka.util.ByteString
 import spray.json._
 import DefaultJsonProtocol._
@@ -11,39 +11,27 @@ import com.typesafe.scalalogging.LazyLogging
 
 object CsvConverter extends LazyLogging {
 
-  def convertLineFlow: Flow[ByteString, (JsValue, Long), NotUsed] = {
+  private val csvLineScannerFlow: Flow[ByteString, (List[ByteString], Long), NotUsed] =
+    CsvParsing.lineScanner().map(byteString => (byteString, System.nanoTime()))
+
+  private val csvTransformFlow: Flow[(List[ByteString], Long), (JsValue, Long), NotUsed] = {
     Flow.fromGraph(GraphDSL.create() { implicit builder =>
       import GraphDSL.Implicits._
+      val unzipShape = builder.add(Unzip[List[ByteString], Long])
+      val processShape = builder.add(CsvToMap.toMapAsStrings().map(_.toJson))
+      val bufferShape = builder.add(Flow[Long].drop(1)) // we need to drop first timer element
+      val zipShape = builder.add(Zip[JsValue, Long])
+      val getProcessTimeShape = builder.add(Flow[(JsValue, Long)].map { case (jsonLine, startTime) =>
+        (jsonLine, ((System.nanoTime() - startTime) / Math.pow(10, 6)).toLong) // convert to millis
+      })
 
-      val simple = builder.add(
-        CsvParsing.lineScanner().via(CsvToMap.toMapAsStrings()).map(_.toJson).map(j => (j, System.currentTimeMillis()))
-      )
-      FlowShape(simple.in, simple.out)
-//      val csvParseByteStringFlowShape =
-//        builder.add(CsvParsing.lineScanner().map(byteStringList => (byteStringList, System.currentTimeMillis())))
-//      val unzipLinesAndTimerShape = builder.add(Unzip[List[ByteString], Long])
-//      val mapperShape = builder.add(
-//        CsvToMap
-//          .toMapAsStrings()
-//          .map(a => {
-//            logger.info(s"mapper $a")
-//            a.toJson
-//          })
-//      )
-//      val zipShape = builder.add(Zip[JsValue, Long])
-////
-//      csvParseByteStringFlowShape.out ~> unzipLinesAndTimerShape.in
-//      unzipLinesAndTimerShape.out0.map(l => {
-//        logger.info(s"unzpi 0 $l")
-//        l
-//      }) ~> mapperShape.in
-//      mapperShape.out.map(l => {
-//        logger.info(s"mapper $l")
-//        l
-//      }) ~> zipShape.in0
-//      unzipLinesAndTimerShape.out1 ~> zipShape.in1
-//
-//      FlowShape(csvParseByteStringFlowShape.in, zipShape.out)
+      unzipShape.out0 ~> processShape ~> zipShape.in0
+      unzipShape.out1 ~> bufferShape ~> zipShape.in1
+      zipShape.out ~> getProcessTimeShape
+
+      FlowShape(unzipShape.in, getProcessTimeShape.out)
     })
   }
+
+  val convertLineFlow: Flow[ByteString, (JsValue, Long), NotUsed] = csvLineScannerFlow.async.via(csvTransformFlow)
 }

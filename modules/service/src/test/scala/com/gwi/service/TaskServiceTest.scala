@@ -117,7 +117,8 @@ class TaskServiceTest
       val taskId = taskService.createTask("randomUrl")
       val taskResult = taskService.getTaskInfo(taskId)
       assert(taskResult.isLeft)
-      val runningTask = taskResult.left.getOrElse(throw new RuntimeException)
+      val runningTask = taskResult.left
+        .getOrElse(throw new RuntimeException)
         .takeWhile(task => !task.map(_.state).contains(TaskState.RUNNING.toString), inclusive = true)
         .runWith(Sink.last)
       taskService.cancelTask(taskId)
@@ -128,7 +129,8 @@ class TaskServiceTest
 
       val newTaskResult = taskService.getTaskInfo(taskId)
       assert(newTaskResult.isLeft)
-      val canceledTask = taskResult.left.getOrElse(throw new RuntimeException)
+      val canceledTask = taskResult.left
+        .getOrElse(throw new RuntimeException)
         .takeWhile(task => !task.map(_.state).contains(TaskState.CANCELED.toString), inclusive = true)
         .runWith(Sink.last)
       canceledTask.map(task => {
@@ -176,7 +178,8 @@ class TaskServiceTest
 
       val taskResult = taskService.getTaskInfo(taskId)
       assert(taskResult.isLeft)
-      val doneTaskF = taskResult.left.getOrElse(throw new RuntimeException)
+      val doneTaskF = taskResult.left
+        .getOrElse(throw new RuntimeException)
         .takeWhile(
           task => {
             !task.map(_.state).contains(TaskState.DONE.toString)
@@ -185,15 +188,16 @@ class TaskServiceTest
         )
         .runWith(Sink.last)
       val task = Await.result(doneTaskF, FiniteDuration(1, TimeUnit.MINUTES))
-      assert(task.flatMap(_.result).nonEmpty)
       assert(task.map(_.state).contains(TaskState.DONE.toString))
+      assert(task.flatMap(_.result).nonEmpty)
 
       val jsonLinesResult = taskService.getJsonLines(taskId)
       assert(jsonLinesResult.isLeft)
-      val jsonLinesF = jsonLinesResult.left.getOrElse(throw new RuntimeException).runWith(Sink.collection[String, List[String]])
-      jsonLinesF.map(jsonLines => {
-        assert(jsonLines.nonEmpty)
-      })
+      val jsonLinesF =
+        jsonLinesResult.left.getOrElse(throw new RuntimeException).runWith(Sink.collection[String, List[String]])
+      val jsonLines = Await.result(jsonLinesF, FiniteDuration(1, TimeUnit.MINUTES))
+      assert(jsonLines.nonEmpty)
+
       //cleanup
       taskService
         .getAllTasks()

@@ -5,6 +5,7 @@ import akka.http.scaladsl.{Http, common}
 import akka.http.scaladsl.common.EntityStreamingSupport
 import akka.http.scaladsl.marshallers.sprayjson.SprayJsonSupport
 import akka.http.scaladsl.model.StatusCodes
+import akka.http.scaladsl.model.headers.{ContentDispositionTypes, `Content-Disposition`}
 import akka.http.scaladsl.server.Directives._
 import akka.http.scaladsl.server.{MethodRejection, RejectionHandler, Route}
 import com.google.inject.Inject
@@ -14,7 +15,7 @@ import com.gwi.server.response.{CreateTaskResponse, ErrorResponse, ReadinessResp
 import com.gwi.service.config.AppConfig
 import com.gwi.service.dto.{GetJsonLinesError, TaskCanceledResult}
 import com.gwi.service.TaskService
-import spray.json.DefaultJsonProtocol
+import spray.json.{DefaultJsonProtocol, JsonParser}
 
 import javax.inject.Singleton
 
@@ -29,7 +30,7 @@ class HttpServer @Inject() (taskService: TaskService, config: AppConfig)(implici
   def startServer(): Unit =
     Http().newServerAt(config.server.ip, config.server.port).bind(buildRoute())
 
-  def buildRoute(): Route = handleRejections(rejectionHandler()){
+  def buildRoute(): Route = handleRejections(rejectionHandler()) {
     concat(
       pathPrefix("ready") {
         get {
@@ -53,11 +54,11 @@ class HttpServer @Inject() (taskService: TaskService, config: AppConfig)(implici
           },
           (get & path(JavaUUID)) { id =>
             taskService.getTaskInfo(id) match {
-            case Left(taskSource) =>
-              complete(taskSource)
-            case _ =>
-              complete(StatusCodes.NotFound, ErrorResponse(s"Task $id not found"))
-          }
+              case Left(taskSource) =>
+                complete(taskSource)
+              case _ =>
+                complete(StatusCodes.NotFound, ErrorResponse(s"Task $id not found"))
+            }
           },
           (delete & path(JavaUUID)) { id =>
             taskService.cancelTask(id) match {
@@ -69,11 +70,18 @@ class HttpServer @Inject() (taskService: TaskService, config: AppConfig)(implici
                 complete(StatusCodes.BadRequest, ErrorResponse(s"Task $id is in not cancelable state"))
             }
           },
-          path("result") {
+          pathPrefix("result") {
             (get & path(JavaUUID)) { taskId =>
               taskService.getJsonLines(taskId) match {
                 case Left(lineSource) =>
-                  complete(lineSource)
+                  respondWithHeader(
+                    `Content-Disposition`(
+                      ContentDispositionTypes.attachment,
+                      Map[String, String](("filename", s"$taskId.json"))
+                    )
+                  ) {
+                    complete(lineSource.map(JsonParser(_)))
+                  }
                 case Right(GetJsonLinesError.NOT_DONE_STATE) =>
                   complete(StatusCodes.BadRequest, ErrorResponse(s"Task $taskId is not in done state"))
                 case _ =>
@@ -87,7 +95,8 @@ class HttpServer @Inject() (taskService: TaskService, config: AppConfig)(implici
   }
 
   def rejectionHandler(): RejectionHandler = {
-    RejectionHandler.newBuilder()
+    RejectionHandler
+      .newBuilder()
       .handleNotFound {
         complete(StatusCodes.NotFound, ErrorResponse("Not found"))
       }

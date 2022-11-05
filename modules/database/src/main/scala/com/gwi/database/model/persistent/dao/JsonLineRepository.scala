@@ -1,9 +1,9 @@
 package com.gwi.database.model.persistent.dao
 
-import akka.NotUsed
+import akka.{Done, NotUsed}
 import akka.actor.ActorSystem
 import akka.stream.alpakka.slick.scaladsl.Slick
-import akka.stream.scaladsl.Source
+import akka.stream.scaladsl.{Sink, Source}
 import com.google.inject.{Inject, Singleton}
 import com.gwi.database.model.persistent.JsonLine
 import slick.jdbc.{ResultSetConcurrency, ResultSetType}
@@ -52,10 +52,15 @@ class JsonLineRepository @Inject() (implicit val actorSystem: ActorSystem) exten
   lazy val insertJsonLine: session.profile.ReturningInsertActionComposer[JsonLine, JsonLine] =
     jsonLine returning jsonLine
 
-  def create(jsonLine: JsonLine): Future[JsonLine] =
+  //def batchCreate(jsonLines: Seq[JsonLine]): DBIO[Int] = insertJsonLine ++= jsonLines
+
+  def sinkCreate: Sink[JsonLine, Future[Done]] =
+    Slick.sink[JsonLine](parallelism = 10, (line: JsonLine) => (jsonLine += line).transactionally)
+
+  def create(jsonLine: JsonLine) =
     session.db.run(createJsonLineQuery(jsonLine).transactionally)
 
-  def createJsonLineQuery(jsonLine: JsonLine): FixedSqlAction[JsonLine, NoStream, Effect.Write] =
+  def createJsonLineQuery(jsonLine: JsonLine) =
     insertJsonLine += jsonLine
 
   def markJsonLinesCompleted(taskId: UUID) =

@@ -22,8 +22,12 @@ import java.nio.file.Paths
 import scala.concurrent.ExecutionContext
 import java.util.UUID
 
-class HttpServerTest extends AnyWordSpecLike with Matchers with ScalatestRouteTest with SprayJsonSupport
-  with DefaultJsonProtocol {
+class HttpServerTest
+    extends AnyWordSpecLike
+    with Matchers
+    with ScalatestRouteTest
+    with SprayJsonSupport
+    with DefaultJsonProtocol {
 
   private val injector = Guice.createInjector(new AbstractModule() {
     override def configure(): Unit = {

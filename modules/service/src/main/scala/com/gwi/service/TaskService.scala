@@ -1,6 +1,6 @@
 package com.gwi.service
 
-import akka.NotUsed
+import akka.{Done, NotUsed}
 import akka.actor.{ActorSystem, Cancellable}
 import akka.stream.scaladsl.{Flow, Keep, Sink, Source}
 import akka.stream.{BoundedSourceQueue, KillSwitch, KillSwitches, OverflowStrategy, QueueOfferResult}
@@ -88,19 +88,25 @@ class TaskService @Inject() (
     .map(mapTaskToDto)
 
   def getTaskInfo(taskId: UUID): Either[Source[Option[TaskDto], Cancellable], Unit] = {
-    taskRepository.get(taskId).map(_ =>
-    Left(Source
-      .tick(0.seconds, 2.seconds, ())
-      .map(_ => taskRepository.get(taskId))
-      .takeWhile(
-        task => {
-          task.nonEmpty && !task
-            .map(_.state)
-            .exists(state => FINAL_STATES.contains(state))
-        },
-        inclusive = true
+    taskRepository
+      .get(taskId)
+      .map(_ =>
+        Left(
+          Source
+            .tick(0.seconds, 2.seconds, ())
+            .map(_ => taskRepository.get(taskId))
+            .takeWhile(
+              task => {
+                task.nonEmpty && !task
+                  .map(_.state)
+                  .exists(state => FINAL_STATES.contains(state))
+              },
+              inclusive = true
+            )
+            .map(_.map(mapTaskToDto))
+        )
       )
-      .map(_.map(mapTaskToDto)))).getOrElse(Right())
+      .getOrElse(Right())
   }
 
   def createJsonLineRetrieveUrl(taskId: UUID): String =
@@ -141,21 +147,25 @@ class TaskService @Inject() (
     taskId
   }
 
-  private def persistLineFlow(taskId: UUID): Flow[(JsValue, Long), Unit, NotUsed] =
-    Flow[(JsValue, Long)].map { case (line, startTime) =>
-      val processTime = System.currentTimeMillis() - startTime
-      jsonLineRepository.create(JsonLine(taskId, processTime, line.toString()))
-      taskRepository
-        .get(taskId)
-        .foreach(task =>
-          taskRepository.upsert(
-            task.copy(
-              linesProcessed = task.linesProcessed + 1,
-              totalProcessingTime = task.totalProcessingTime + processTime
+  def updateTaskFlow(taskId: UUID): Flow[(JsValue, Long), JsonLine, NotUsed] = {
+    Flow[(JsValue, Long)]
+      .map { case (line, processTime) =>
+        taskRepository
+          .get(taskId)
+          .foreach(task =>
+            taskRepository.upsert(
+              task.copy(
+                linesProcessed = task.linesProcessed + 1,
+                totalProcessingTime = task.totalProcessingTime + processTime
+              )
             )
           )
-        )
-    }
+        JsonLine(taskId, processTime, line.toString())
+      }
+  }
+
+  private def persistLineSink: Sink[JsonLine, Future[Done]] =
+    jsonLineRepository.sinkCreate
 
   private def markTaskComplete(taskId: UUID): Unit = {
     logger.info(s"Task $taskId was completed")
@@ -213,11 +223,9 @@ class TaskService @Inject() (
                 .via(taskFlowService.createConsumeCsvFlowFlow())
                 .buffer(config.backPressure.bufferSize, OverflowStrategy.backpressure)
                 .async
-                .via(persistLineFlow(taskId))
-                .buffer(config.backPressure.bufferSize, OverflowStrategy.backpressure)
-                .async
+                .via(updateTaskFlow(taskId))
                 .viaMat(KillSwitches.single)(Keep.right)
-                .toMat(Sink.ignore)(Keep.both)
+                .toMat(persistLineSink)(Keep.both)
                 .run()
 
             tasksKillSwitchMap.update(taskId, killSwitch)
