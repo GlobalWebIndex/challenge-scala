@@ -45,15 +45,7 @@ class TaskService @Inject() (
 
   private def loadDoneTasks(): Unit = {
     val sink = Sink.foreach[DoneTaskFromJsonLines](task =>
-      taskRepository.upsert(
-        Task(
-          task.taskId,
-          task.linesProcessed,
-          task.totalProcessingTime,
-          TaskState.DONE,
-          Some(createJsonLineRetrieveUrl(task.taskId))
-        )
-      )
+      taskRepository.upsert(Task(task.taskId, task.linesProcessed, task.totalProcessingTime, TaskState.DONE))
     )
 
     jsonLineRepository.findAllTasks().runWith(sink).onComplete(_ => isReady = true)
@@ -129,7 +121,7 @@ class TaskService @Inject() (
   def createTask(url: String): UUID = {
     val taskId = UUID.randomUUID()
 
-    val task = Task(taskId, 0, 0, TaskState.SCHEDULED, None)
+    val task = Task(taskId, 0, 0, TaskState.SCHEDULED)
     taskRepository.upsert(task)
     queue.offer((taskId, url)) match {
       case QueueOfferResult.Enqueued =>
@@ -149,7 +141,7 @@ class TaskService @Inject() (
 
   def updateTaskFlow(taskId: UUID): Flow[(JsValue, Long), JsonLine, NotUsed] = {
     Flow[(JsValue, Long)]
-      .map { case (line, processTime) =>
+      .mapAsync(4) { case (line, processTime) =>
         taskRepository
           .get(taskId)
           .foreach(task =>
@@ -160,7 +152,7 @@ class TaskService @Inject() (
               )
             )
           )
-        JsonLine(taskId, processTime, line.toString())
+        Future.successful(JsonLine(taskId, processTime, line.toString()))
       }
   }
 
@@ -195,7 +187,7 @@ class TaskService @Inject() (
         )
       case (lines, time) =>
         val averageLinesProcessed =
-          lines / time
+          (lines / (time / Math.pow(10, 9))).toLong // convert to seconds
         TaskDto(
           task.id,
           lines,

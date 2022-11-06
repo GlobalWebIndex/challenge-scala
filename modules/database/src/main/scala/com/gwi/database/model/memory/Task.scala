@@ -13,4 +13,4 @@ object TaskState extends Enumeration {
   val CANCELED: TaskState = Value("Canceled")
 }
 
-case class Task(id: UUID, linesProcessed: Long, totalProcessingTime: Long, state: TaskState, result: Option[String])
+case class Task(id: UUID, linesProcessed: Long, totalProcessingTime: Long, state: TaskState)

@@ -1,7 +1,7 @@
 package com.gwi.database.model.persistent.dao
 
 import akka.actor.ActorSystem
-import akka.stream.scaladsl.Sink
+import akka.stream.scaladsl.{Sink, Source}
 import akka.testkit.TestKit
 import com.gwi.database.model.persistent.JsonLine
 import org.scalatest.{BeforeAndAfterAll, BeforeAndAfterEach}
@@ -73,6 +73,21 @@ class JsonLineRepositoryTest
         assert(taskIdList.size == 1)
         assert(taskIdList.headOption.contains(taskId2))
       })
+    }
+
+    "insert lines using a sink" in {
+      val taskId = UUID.randomUUID()
+      val jsonLines = for (_ <- 1 to 100) yield JsonLine(taskId, 100, "{\"element\":\"value\"}", isComplete = true)
+
+      val createResult = Source(jsonLines).runWith(jsonLineRepository.sinkCreate)
+      for {
+        _ <- createResult
+        readResult <- jsonLineRepository
+          .getJsonLines(taskId)
+          .runWith(Sink.collection[JsonLine, List[JsonLine]])
+      } yield {
+        assert(readResult.size == 100)
+      }
     }
 
     "mark lines of a task completed" in {

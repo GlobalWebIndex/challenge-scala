@@ -12,7 +12,7 @@ class TaskRepositoryTest extends AnyWordSpec {
     "perform read, write, update operations" in {
       val taskRepository = new TaskRepository()
       val taskId = UUID.randomUUID()
-      val task = Task(taskId, 0L, 0L, TaskState.SCHEDULED, None)
+      val task = Task(taskId, 0L, 0L, TaskState.SCHEDULED)
       assert(taskRepository.get(taskId).isEmpty)
       taskRepository.upsert(task)
       assert(taskRepository.get(taskId).contains(task))
@@ -22,7 +22,7 @@ class TaskRepositoryTest extends AnyWordSpec {
       assert(taskRepository.get(taskId).contains(updatedTask))
 
       val newTaskId = UUID.randomUUID()
-      val newTask = Task(newTaskId, 0L, 0L, TaskState.SCHEDULED, None)
+      val newTask = Task(newTaskId, 0L, 0L, TaskState.SCHEDULED)
       taskRepository.addBulk(List(newTask))
       assert(taskRepository.get(taskId).contains(updatedTask))
       assert(taskRepository.get(newTaskId).contains(newTask))

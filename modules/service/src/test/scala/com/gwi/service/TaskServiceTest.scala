@@ -203,6 +203,7 @@ class TaskServiceTest
         .getAllTasks()
         .runWith(Sink.collection[TaskDto, List[TaskDto]])
         .foreach(taskOpt => taskOpt.foreach(task => taskService.cancelTask(task.id)))
+
       Succeeded
     }
   }

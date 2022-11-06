@@ -11,27 +11,24 @@ import com.typesafe.scalalogging.LazyLogging
 
 object CsvConverter extends LazyLogging {
 
-  private val csvLineScannerFlow: Flow[ByteString, (List[ByteString], Long), NotUsed] =
-    CsvParsing.lineScanner().map(byteString => (byteString, System.nanoTime()))
-
-  private val csvTransformFlow: Flow[(List[ByteString], Long), (JsValue, Long), NotUsed] = {
+  val convertLineFlow: Flow[ByteString, (JsValue, Long), NotUsed] = {
     Flow.fromGraph(GraphDSL.create() { implicit builder =>
       import GraphDSL.Implicits._
+      val lineScannerShape = builder.add(CsvParsing.lineScanner().map(byteString => (byteString, System.nanoTime())))
       val unzipShape = builder.add(Unzip[List[ByteString], Long])
       val processShape = builder.add(CsvToMap.toMapAsStrings().map(_.toJson))
       val bufferShape = builder.add(Flow[Long].drop(1)) // we need to drop first timer element
       val zipShape = builder.add(Zip[JsValue, Long])
       val getProcessTimeShape = builder.add(Flow[(JsValue, Long)].map { case (jsonLine, startTime) =>
-        (jsonLine, ((System.nanoTime() - startTime) / Math.pow(10, 6)).toLong) // convert to millis
+        (jsonLine, System.nanoTime() - startTime)
       })
 
+      lineScannerShape.out ~> unzipShape.in
       unzipShape.out0 ~> processShape ~> zipShape.in0
       unzipShape.out1 ~> bufferShape ~> zipShape.in1
       zipShape.out ~> getProcessTimeShape
 
-      FlowShape(unzipShape.in, getProcessTimeShape.out)
+      FlowShape(lineScannerShape.in, getProcessTimeShape.out)
     })
   }
-
-  val convertLineFlow: Flow[ByteString, (JsValue, Long), NotUsed] = csvLineScannerFlow.async.via(csvTransformFlow)
 }

@@ -134,6 +134,8 @@ All the process is in memory, although only a piece of the data is loaded and pr
 A more robust solution could be probably achieved using a message bus (like Apache Kafka), utilizing its persistence, but I decided to create an implementation with as few dependencies as possible.
 
 There are no retries in the flow, so if a step fails, the whole flow will. This was intentional, as a part of the information will be missing.
+Some processing can be parallelized, but the transformation of the CSV lines to JSON needs to be serial, as the first line contains the headers.
+That is the reason that the division of the lines processed to the total process time gives the correct result for the average lines processed per second.
 
 Regarding the database schema, a `JSONB` column should be more suitable, but `Slick` does not support it directly, but via another library, so I decided at the time being not to dedicate time for this.
 Probably a Document DB, like `MongoDB`, or `ElasticSearch` for also supporting text-based search, would be more suitable, but there was no need to add more complexity at the moment.

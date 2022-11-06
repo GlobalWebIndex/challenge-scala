@@ -7,7 +7,6 @@ import akka.stream.scaladsl.{Sink, Source}
 import com.google.inject.{Inject, Singleton}
 import com.gwi.database.model.persistent.JsonLine
 import slick.jdbc.{ResultSetConcurrency, ResultSetType}
-import slick.sql.FixedSqlAction
 
 import java.time.LocalDateTime
 import java.util.UUID
@@ -55,7 +54,7 @@ class JsonLineRepository @Inject() (implicit val actorSystem: ActorSystem) exten
   //def batchCreate(jsonLines: Seq[JsonLine]): DBIO[Int] = insertJsonLine ++= jsonLines
 
   def sinkCreate: Sink[JsonLine, Future[Done]] =
-    Slick.sink[JsonLine](parallelism = 10, (line: JsonLine) => (jsonLine += line).transactionally)
+    Slick.sink[JsonLine](parallelism = 4, (line: JsonLine) => (jsonLine += line).transactionally)
 
   def create(jsonLine: JsonLine) =
     session.db.run(createJsonLineQuery(jsonLine).transactionally)
