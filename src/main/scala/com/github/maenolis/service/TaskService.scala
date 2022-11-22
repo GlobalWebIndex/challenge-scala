@@ -86,7 +86,7 @@ class TaskService(httpRequests: HttpClientRequestService, db: Database)(implicit
     }))(Keep.both)
     .run()
 
-  def extractEntityData(response: HttpResponse): Source[ByteString, _] =
+  private def extractEntityData(response: HttpResponse): Source[ByteString, _] =
     response match {
       case HttpResponse(OK, _, entity, _) => entity.dataBytes
       case notOkResponse =>
