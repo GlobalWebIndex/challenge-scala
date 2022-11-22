@@ -10,7 +10,7 @@ import akka.http.scaladsl.server.Directives._
 import akka.http.scaladsl.server.Route
 import akka.stream.scaladsl.Source
 import akka.util.{CompactByteString, Timeout}
-import com.github.maenolis.model.{JsonFormats, TaskDto, TaskList}
+import com.github.maenolis.model.{JsonFormats, TaskDto, TaskList, TaskStatus}
 import com.github.maenolis.service.TaskService
 
 import scala.concurrent.ExecutionContext
@@ -48,7 +48,12 @@ class TaskRoutes(taskService: TaskService)(implicit
         .mapAsync(1)(_ => {
           taskService.getTaskDetails(id)
         })
-        .filter(_.nonEmpty)
+        .takeWhile(_.nonEmpty)
+        .takeWhile(taskOpt =>
+          taskOpt.exists(task =>
+            !TaskStatus.isTerminal(TaskStatus.withName(task.state))
+          )
+        )
         .map(task => ServerSentEvent(task.get.toString))
         .keepAlive(2.second, () => ServerSentEvent.heartbeat)
     }
