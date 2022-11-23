@@ -49,10 +49,12 @@ class TaskRoutes(taskService: TaskService)(implicit
           taskService.getTaskDetails(id)
         })
         .takeWhile(_.nonEmpty)
-        .takeWhile(taskOpt =>
-          taskOpt.exists(task =>
-            !TaskStatus.isTerminal(TaskStatus.withName(task.state))
-          )
+        .takeWhile(
+          taskOpt =>
+            taskOpt.exists(task =>
+              !TaskStatus.isTerminal(TaskStatus.withName(task.state))
+            ),
+          inclusive = true
         )
         .map(task => ServerSentEvent(task.get.toString))
         .keepAlive(2.second, () => ServerSentEvent.heartbeat)
