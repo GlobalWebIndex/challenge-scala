@@ -1,3 +1,16 @@
+# Run Instructions
+
+### Docker
+Startup and initialize postgres
+`docker-compose up -d`
+### Sbt App
+`sbt run` **or** `sbt "runMain com.github.maenolis.server.Server"`
+### Notes
+You will not find in this assignement:
+- Dependency injection (not really needed)
+- Tests (out of scope)
+- Documentation (out of scope)
+
 # Scala challenge
 
 Hello future colleague! In this assessment, we request that you implement an HTTP application that converts CSV data sets to JSON data sets. The application will provide the following endpoints:
