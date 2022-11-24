@@ -32,3 +32,5 @@ lazy val root = (project in file(".")).
       "org.scalatest"     %% "scalatest"                      % "3.2.9"         % Test
     )
   )
+
+Compile / run / mainClass := Some("com.github.maenolis.server.Server")
