@@ -8,7 +8,8 @@ import com.github.maenolis.service.TaskService
 import slick.jdbc.JdbcBackend
 import slick.jdbc.JdbcBackend.Database
 
-import scala.concurrent.ExecutionContextExecutor
+import scala.concurrent.duration.Duration
+import scala.concurrent.{Await, ExecutionContextExecutor, Future}
 import scala.io.StdIn
 
 object Server {
@@ -24,7 +25,9 @@ object Server {
       .newServerAt("localhost", 8080)
       .bind(new TaskRoutes(taskService).allRoutes())
 
-    StdIn.readLine()
+    Await.result(Future.never, Duration.Inf)
+
+    // let it run until user presses return
     futureBinding
       .flatMap(_.unbind())
       .onComplete(_ => {
