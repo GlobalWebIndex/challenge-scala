@@ -7,7 +7,5 @@ import play.api.mvc.ControllerComponents
 
 class CheckController(controllerComponents: ControllerComponents)
     extends AbstractController(controllerComponents) {
-  def check: Action[AnyContent] = Action { implicit request =>
-    Ok("running")
-  }
+  def check: Action[AnyContent] = Action { Ok("running") }
 }
