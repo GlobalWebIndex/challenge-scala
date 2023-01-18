@@ -23,15 +23,16 @@ object TempData {
       "foo",
       0,
       System.currentTimeMillis,
-      TaskCurrentState.Running,
-      new File("result/foo.json")
+      TaskCurrentState.Running
     ),
     TaskInfo(
       "bar",
       100,
       System.currentTimeMillis,
-      TaskCurrentState.Done(System.currentTimeMillis + 1000),
-      new File("build.sbt")
+      TaskCurrentState.Done(
+        System.currentTimeMillis + 1000,
+        new File("build.sbt")
+      )
     )
   )
   val newTaskInfo =
@@ -39,7 +40,6 @@ object TempData {
       "foo",
       0,
       System.currentTimeMillis,
-      TaskCurrentState.Running,
-      new File("result/foo.json")
+      TaskCurrentState.Running
     )
 }

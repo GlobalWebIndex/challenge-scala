@@ -21,14 +21,14 @@ package object controllers {
       info: TaskInfo
   )(implicit requestHeader: RequestHeader): (String, TaskDetails) = {
     val lastTime = info.state match {
-      case TaskCurrentState.Done(at) => at
-      case _                         => System.currentTimeMillis
+      case TaskCurrentState.Done(at, _) => at
+      case _                            => System.currentTimeMillis
     }
     val runningTime = lastTime - info.runningSince
     val avgLinesProcessed =
       if (runningTime <= 0) 0 else info.linesProcessed * 1000.0 / runningTime
     val resultUrl = info.state match {
-      case TaskCurrentState.Done(_) =>
+      case TaskCurrentState.Done(_, _) =>
         Some(
           routes.CsvToJsonController
             .taskResult(info.taskId)
@@ -37,11 +37,11 @@ package object controllers {
       case _ => None
     }
     val state = info.state match {
-      case TaskCurrentState.Scheduled => TaskState.SCHEDULED
-      case TaskCurrentState.Running   => TaskState.RUNNING
-      case TaskCurrentState.Done(_)   => TaskState.DONE
-      case TaskCurrentState.Failed    => TaskState.FAILED
-      case TaskCurrentState.Cancelled => TaskState.CANCELLED
+      case TaskCurrentState.Scheduled  => TaskState.SCHEDULED
+      case TaskCurrentState.Running    => TaskState.RUNNING
+      case TaskCurrentState.Done(_, _) => TaskState.DONE
+      case TaskCurrentState.Failed     => TaskState.FAILED
+      case TaskCurrentState.Cancelled  => TaskState.CANCELLED
     }
     (
       info.taskId,

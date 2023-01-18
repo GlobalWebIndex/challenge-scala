@@ -1,24 +1,14 @@
 package controllers
 
-import akka.http.javadsl.model.HttpEntity
-import akka.stream.scaladsl.FileIO
 import conversion.ConversionService
 import models.TaskCurrentState
-import models.TaskDetails
-import models.TaskInfo
-import models.TaskState
-import play.api.Configuration
 import play.api.libs.json.Json
 import play.api.libs.json.Writes.keyMapWrites
 import play.api.mvc.AbstractController
 import play.api.mvc.Action
 import play.api.mvc.ControllerComponents
-import play.api.mvc.Request
-import play.api.mvc.RequestHeader
 
 import java.io.File
-import java.net.URI
-import java.nio.file.Files
 import scala.concurrent.ExecutionContext
 
 class CsvToJsonController(
@@ -63,9 +53,9 @@ class CsvToJsonController(
           case None => NotFound("No such task")
           case Some(details) =>
             details.state match {
-              case TaskCurrentState.Done(_) =>
+              case TaskCurrentState.Done(_, result) =>
                 Ok.sendFile(
-                  details.result,
+                  result,
                   fileName = (_: File) => Some(s"$name.json")
                 )
               case _ => BadRequest("Task is not finished")

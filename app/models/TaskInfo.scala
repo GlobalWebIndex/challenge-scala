@@ -6,6 +6,5 @@ final case class TaskInfo(
     taskId: String,
     linesProcessed: Int,
     runningSince: Long,
-    state: TaskCurrentState,
-    result: File
+    state: TaskCurrentState
 )
