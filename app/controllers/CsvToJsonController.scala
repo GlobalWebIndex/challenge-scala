@@ -65,7 +65,7 @@ class CsvToJsonController(
             details.state match {
               case TaskCurrentState.Done(_) =>
                 Ok.sendFile(
-                  details.result, // TOFIX!!!
+                  details.result,
                   fileName = (_: File) => Some(s"$name.json")
                 )
               case _ => BadRequest("Task is not finished")
