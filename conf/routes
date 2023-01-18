@@ -1,9 +1,12 @@
-# Routes
-# This file defines all application routes (Higher priority routes first)
-# https://www.playframework.com/documentation/latest/ScalaRouting
-# ~~~~
+# Conversion tasks management
+POST    /task                       controllers.CsvToJsonController.createTask
+GET     /task                       controllers.CsvToJsonController.listTasks
+GET     /task/:taskId               controllers.CsvToJsonController.taskDetails(taskId: String)
+DELETE  /task/:taskId               controllers.CsvToJsonController.cancelTask(taskId: String)
 
-# An example controller showing a sample home page
+GET     /task/result/:name          controllers.CsvToJsonController.taskResult(name: String)
+
+# Check if the app is running
 GET     /check                      controllers.CheckController.check
 
 # Map static resources from the /public folder to the /assets URL path
