@@ -12,22 +12,20 @@ import java.io.File
 object ConversionActor {
   def create(concurrency: Int): ActorRef[ConversionMessage] =
     ActorSystem(
-      Behaviors.receiveMessage[ConversionMessage] { message =>
-        message match {
-          case ConversionMessage.CreateTask(url, replyTo) =>
-            replyTo ! TempData.newTaskInfo
-            Behaviors.same
-          case ConversionMessage.ListTasks(replyTo) =>
-            replyTo ! TempData.allTaskInfos
-            Behaviors.same
-          case ConversionMessage.GetTask(taskId, replyTo) =>
-            replyTo ! TempData.allTaskInfos.find(_.taskId == taskId)
-            Behaviors.same
-          case ConversionMessage.CancelTask(taskId, replyTo) =>
-            replyTo ! TempData.allTaskInfos.exists(_.taskId == taskId)
-            Behaviors.same
-        }
-      },
+      Behaviors.receiveMessage[ConversionMessage](_ match {
+        case ConversionMessage.CreateTask(url, replyTo) =>
+          replyTo ! TempData.newTaskInfo
+          Behaviors.same
+        case ConversionMessage.ListTasks(replyTo) =>
+          replyTo ! TempData.allTaskInfos
+          Behaviors.same
+        case ConversionMessage.GetTask(taskId, replyTo) =>
+          replyTo ! TempData.allTaskInfos.find(_.taskId == taskId)
+          Behaviors.same
+        case ConversionMessage.CancelTask(taskId, replyTo) =>
+          replyTo ! TempData.allTaskInfos.exists(_.taskId == taskId)
+          Behaviors.same
+      }),
       "ConversionActor"
     )
 }
