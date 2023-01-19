@@ -1,6 +1,8 @@
 import models.TaskCurrentState
 import models.TaskDetails
 import models.TaskInfo
+import models.TaskShortDetails
+import models.TaskShortInfo
 import models.TaskState
 import play.api.libs.json.JsString
 import play.api.libs.json.Json
@@ -16,10 +18,28 @@ package object controllers {
     case TaskState.CANCELLED => JsString("CANCELLED")
   })
   implicit val taskDetailsWrites = Json.writes[TaskDetails]
+  implicit val taskShortDetailsWrites = Json.writes[TaskShortDetails]
 
+  def taskShortInfoToDetails(info: TaskShortInfo)(implicit
+      requestHeader: RequestHeader
+  ): (String, TaskShortDetails) = {
+    val resultUrl = info.state match {
+      case TaskState.DONE =>
+        Some(
+          routes.CsvToJsonController
+            .taskResult(info.taskId)
+            .absoluteURL(requestHeader.secure)
+        )
+      case _ => None
+    }
+    (
+      info.taskId,
+      TaskShortDetails(info.state, resultUrl)
+    )
+  }
   def taskInfoToDetails(
       info: TaskInfo
-  )(implicit requestHeader: RequestHeader): (String, TaskDetails) = {
+  )(implicit requestHeader: RequestHeader): TaskDetails = {
     val lastTime = info.state match {
       case TaskCurrentState.Done(at, _) => at
       case _                            => System.currentTimeMillis
@@ -43,9 +63,6 @@ package object controllers {
       case TaskCurrentState.Failed     => TaskState.FAILED
       case TaskCurrentState.Cancelled  => TaskState.CANCELLED
     }
-    (
-      info.taskId,
-      TaskDetails(info.linesProcessed, avgLinesProcessed, state, resultUrl)
-    )
+    TaskDetails(info.linesProcessed, avgLinesProcessed, state, resultUrl)
   }
 }

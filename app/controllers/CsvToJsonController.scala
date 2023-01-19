@@ -33,18 +33,17 @@ class CsvToJsonController(
   }
   def listTasks: Action[Unit] = Action.async(parse.empty) { implicit request =>
     conversionService.listTasks.map(tasks =>
-      Ok(Json.toJson(tasks.map(taskInfoToDetails).toMap))
+      Ok(Json.toJson(tasks.map(taskShortInfoToDetails).toMap))
     )
   }
   def taskDetails(taskId: String): Action[Unit] =
-    Action.async(parse.empty) { // TOFIX: update every two seconds
-      implicit request =>
-        conversionService
-          .getTask(taskId)
-          .map(_ match {
-            case None       => NotFound("No such task")
-            case Some(info) => Ok.chunked(taskDetailsStream(info), None)
-          })
+    Action.async(parse.empty) { implicit request =>
+      conversionService
+        .getTask(taskId)
+        .map(_ match {
+          case None       => NotFound("No such task")
+          case Some(info) => Ok.chunked(taskDetailsStream(info), None)
+        })
     }
   def cancelTask(taskId: String): Action[Unit] = Action.async(parse.empty) {
     implicit request =>
@@ -88,7 +87,7 @@ class CsvToJsonController(
         },
         inclusive = true
       )
-      .map(info => Json.stringify(Json.toJson(taskInfoToDetails(info)._2)))
+      .map(info => Json.stringify(Json.toJson(taskInfoToDetails(info))))
       .intersperse("\n")
 
 }

@@ -10,6 +10,7 @@ import models.TaskInfo
 
 import java.io.File
 import scala.concurrent.Future
+import models.TaskShortInfo
 
 class ConversionService(config: ConversionConfig)(implicit
     scheduler: Scheduler
@@ -18,9 +19,18 @@ class ConversionService(config: ConversionConfig)(implicit
 
   private val conversionActor = ConversionActor.create(config.concurrency)
 
-  def createTask(url: String): Future[TaskInfo] =
-    conversionActor.ask(ConversionMessage.CreateTask(url, _))
-  def listTasks: Future[Seq[TaskInfo]] =
+  def createTask(url: String): Future[TaskInfo] = {
+    val taskId = java.util.UUID.randomUUID.toString()
+    conversionActor.ask(
+      ConversionMessage.CreateTask(
+        taskId,
+        url,
+        config.resultDirectory.resolve(s"$taskId.json").toFile(),
+        _
+      )
+    )
+  }
+  def listTasks: Future[Seq[TaskShortInfo]] =
     conversionActor.ask(ConversionMessage.ListTasks)
   def getTask(taskId: String): Future[Option[TaskInfo]] =
     conversionActor.ask(ConversionMessage.GetTask(taskId, _))

@@ -4,7 +4,7 @@ import java.io.File
 
 final case class TaskInfo(
     taskId: String,
-    linesProcessed: Int,
+    linesProcessed: Long,
     runningSince: Long,
     state: TaskCurrentState
 )
