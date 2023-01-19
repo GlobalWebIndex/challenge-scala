@@ -4,6 +4,7 @@ import com.softwaremill.macwire._
 import controllers.Assets
 import controllers.CheckController
 import controllers.CsvToJsonController
+import conversion.ConversionActor
 import conversion.ConversionConfig
 import conversion.ConversionService
 import play.api.Application
