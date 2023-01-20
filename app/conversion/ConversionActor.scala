@@ -5,6 +5,7 @@ import akka.actor.typed.ActorSystem
 import akka.actor.typed.Behavior
 import akka.actor.typed.scaladsl.ActorContext
 import akka.actor.typed.scaladsl.Behaviors
+import akka.util.Timeout
 import models.ConversionMessage
 import models.TaskCurrentState
 import models.TaskInfo
@@ -13,7 +14,6 @@ import models.TaskState
 
 import java.nio.file.Files
 import java.nio.file.Path
-import akka.util.Timeout
 
 object ConversionActor {
   private sealed trait WorkerResponse

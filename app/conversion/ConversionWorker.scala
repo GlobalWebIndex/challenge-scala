@@ -1,6 +1,5 @@
 package conversion
 
-import akka.actor.typed.ActorSystem
 import akka.actor.typed.scaladsl.ActorContext
 import akka.http.scaladsl.Http
 import akka.http.scaladsl.model.HttpMethods
@@ -54,8 +53,8 @@ class ConversionWorker(
     onDone: Long => Unit,
     onFail: () => Unit
 ) {
-  implicit val as: ActorSystem[Nothing] = context.system
-  implicit val ec = as.executionContext
+  private implicit val as = context.system
+  private implicit val ec = as.executionContext
 
   private val items =
     Source

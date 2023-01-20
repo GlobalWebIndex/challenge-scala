@@ -6,7 +6,6 @@ import models.TaskShortInfo
 import models.TaskState
 import play.api.libs.json.JsString
 import play.api.libs.json.Json
-import play.api.libs.json.OWrites
 import play.api.libs.json.Writes
 import play.api.mvc.RequestHeader
 
@@ -18,8 +17,10 @@ package object controllers {
     case TaskState.FAILED    => JsString("FAILED")
     case TaskState.CANCELLED => JsString("CANCELLED")
   })
-  implicit val taskDetailsWrites: OWrites[TaskDetails] = Json.writes[TaskDetails]
-  implicit val taskShortDetailsWrites: OWrites[TaskShortDetails] = Json.writes[TaskShortDetails]
+  implicit val taskDetailsWrites: Writes[TaskDetails] =
+    Json.writes[TaskDetails]
+  implicit val taskShortDetailsWrites: Writes[TaskShortDetails] =
+    Json.writes[TaskShortDetails]
 
   def taskShortInfoToDetails(info: TaskShortInfo)(implicit
       requestHeader: RequestHeader
