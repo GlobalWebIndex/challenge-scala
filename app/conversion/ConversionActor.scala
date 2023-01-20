@@ -17,14 +17,14 @@ import models.TaskState
 object ConversionActor {
   private sealed trait WorkerResponse
   private object WorkerResponse {
-    final case class Cancelled(taskId: String) extends WorkerResponse
-    final case class Done(taskId: String, totalCount: Long)
-        extends WorkerResponse
+    object Cancelled extends WorkerResponse
+    final case class Done(totalCount: Long) extends WorkerResponse
   }
   private sealed trait Message
   private object Message {
     final case class Public(message: ConversionMessage) extends Message
-    final case class Private(message: WorkerResponse) extends Message
+    final case class Private(taskId: String, message: WorkerResponse)
+        extends Message
   }
   sealed trait TaskRunState
   object TaskRunState {
@@ -56,21 +56,15 @@ object ConversionActor {
     ): (TaskInfo, State) =
       if (running < concurrency) {
         val time = System.currentTimeMillis
-        val runState =
-          TaskRunState.Running(
-            time,
-            new ConversionWorker(
-              url,
-              result,
-              onDone
-            ),
-            result
-          )
         (
           TaskInfo(taskId, 0, time, TaskCurrentState.Running),
           copy(
             running = running + 1,
-            tasks = tasks + (taskId -> runState)
+            tasks = tasks + (taskId -> TaskRunState.Running(
+              time,
+              new ConversionWorker(url, result, onDone),
+              result
+            ))
           )
         )
       } else {
@@ -85,43 +79,41 @@ object ConversionActor {
     def getTask(
         taskId: String,
         onTaskInfo: TaskInfo => Unit
-    ): Boolean =
-      tasks.get(taskId) match {
-        case None => false
-        case Some(st) =>
-          st match {
-            case TaskRunState.Scheduled(_, _) =>
-              onTaskInfo(TaskInfo(taskId, 0, 0, TaskCurrentState.Scheduled))
-            case TaskRunState.Running(runningSince, worker, _) =>
-              worker.currentCount(count =>
-                onTaskInfo(
-                  TaskInfo(
-                    taskId,
-                    count,
-                    runningSince,
-                    TaskCurrentState.Running
-                  )
-                )
+    ): Boolean = {
+      val task = tasks.get(taskId)
+      task.foreach(_ match {
+        case TaskRunState.Scheduled(_, _) =>
+          onTaskInfo(TaskInfo(taskId, 0, 0, TaskCurrentState.Scheduled))
+        case TaskRunState.Running(runningSince, worker, _) =>
+          worker.currentCount(count =>
+            onTaskInfo(
+              TaskInfo(
+                taskId,
+                count,
+                runningSince,
+                TaskCurrentState.Running
               )
-            case TaskRunState.Cancelled =>
-              onTaskInfo(TaskInfo(taskId, 0, 0, TaskCurrentState.Cancelled))
-            case TaskRunState.Done(
-                  runningSince,
-                  finishedAt,
-                  linesProcessed,
-                  result
-                ) =>
-              onTaskInfo(
-                TaskInfo(
-                  taskId,
-                  linesProcessed,
-                  runningSince,
-                  TaskCurrentState.Done(finishedAt, result)
-                )
-              )
-          }
-          true
-      }
+            )
+          )
+        case TaskRunState.Cancelled =>
+          onTaskInfo(TaskInfo(taskId, 0, 0, TaskCurrentState.Cancelled))
+        case TaskRunState.Done(
+              runningSince,
+              finishedAt,
+              linesProcessed,
+              result
+            ) =>
+          onTaskInfo(
+            TaskInfo(
+              taskId,
+              linesProcessed,
+              runningSince,
+              TaskCurrentState.Done(finishedAt, result)
+            )
+          )
+      })
+      task.isDefined
+    }
     def listTasks: Seq[TaskShortInfo] = tasks.toSeq.map {
       case (taskId, state) =>
         state match {
@@ -135,10 +127,6 @@ object ConversionActor {
             TaskShortInfo(taskId, TaskState.DONE)
         }
     }
-    private def cancelScheduledTask(taskId: String): State = copy(
-      queue = queue.filterNot(_.taskId == taskId),
-      tasks = tasks + (taskId -> TaskRunState.Cancelled)
-    )
     def cancelTask(
         taskId: String,
         onCancel: () => Unit
@@ -151,7 +139,11 @@ object ConversionActor {
               worker.cancel(onCancel)
               (true, None)
             case TaskRunState.Scheduled(_, _) =>
-              (true, Some(cancelScheduledTask(taskId)))
+              val newState = copy(
+                queue = queue.filterNot(_.taskId == taskId),
+                tasks = tasks + (taskId -> TaskRunState.Cancelled)
+              )
+              (true, Some(newState))
             case TaskRunState.Cancelled        => (true, None)
             case TaskRunState.Done(_, _, _, _) => (true, None)
           }
@@ -180,95 +172,69 @@ object ConversionActor {
       }
     }
   }
-  private def behavior(
-      context: ActorContext[Message],
-      state: State
-  ): Behavior[Message] =
-    Behaviors.receiveMessage(_ match {
-      case Message.Public(message) =>
-        message match {
-          case ConversionMessage.CreateTask(taskId, url, result, replyTo) =>
-            val (taskInfo, newState) =
-              state.addTask(
+  private def done(taskId: String, totalCount: Long) =
+    Message.Private(taskId, WorkerResponse.Done(totalCount))
+  private def behavior(state: State): Behavior[Message] =
+    Behaviors.receive((context, message) =>
+      message match {
+        case Message.Public(message) =>
+          message match {
+            case ConversionMessage.CreateTask(taskId, url, result, replyTo) =>
+              val (taskInfo, newState) =
+                state.addTask(
+                  taskId,
+                  url,
+                  result,
+                  context.self ! done(taskId, _)
+                )
+              replyTo ! taskInfo
+              behavior(newState)
+            case ConversionMessage.ListTasks(replyTo) =>
+              replyTo ! state.listTasks
+              Behaviors.same
+            case ConversionMessage.GetTask(taskId, replyTo) =>
+              if (!state.getTask(taskId, replyTo ! Some(_))) replyTo ! None
+              Behaviors.same
+            case ConversionMessage.CancelTask(taskId, replyTo) =>
+              val (response, newStateOpt) = state.cancelTask(
                 taskId,
-                url,
-                result,
-                totalCount =>
+                () =>
                   context.self ! Message.Private(
-                    WorkerResponse.Done(taskId, totalCount)
+                    taskId,
+                    WorkerResponse.Cancelled
                   )
               )
-            replyTo ! taskInfo
-            behavior(context, newState)
-          case ConversionMessage.ListTasks(replyTo) =>
-            replyTo ! state.listTasks
-            Behaviors.same
-          case ConversionMessage.GetTask(taskId, replyTo) =>
-            if (!state.getTask(taskId, taskInfo => replyTo ! Some(taskInfo)))
-              replyTo ! None
-            Behaviors.same
-          case ConversionMessage.CancelTask(taskId, replyTo) =>
-            val (response, newStateOpt) = state.cancelTask(
-              taskId,
-              () =>
-                context.self ! Message.Private(
-                  WorkerResponse.Cancelled(taskId)
-                )
-            )
-            replyTo ! response
-            newStateOpt match {
-              case None           => Behaviors.same
-              case Some(newState) => behavior(context, newState)
-            }
-        }
-      case Message.Private(message) =>
-        message match {
-          case WorkerResponse.Cancelled(taskId) =>
-            state.tasks.get(taskId) match {
-              case Some(TaskRunState.Running(_, _, result)) =>
-                result.delete()
-                behavior(
-                  context,
-                  state.pickNext(
-                    taskId,
-                    TaskRunState.Cancelled,
-                    (newTaskId, totalCount) =>
-                      context.self ! Message.Private(
-                        WorkerResponse.Done(newTaskId, totalCount)
-                      )
+              replyTo ! response
+              newStateOpt match {
+                case None           => Behaviors.same
+                case Some(newState) => behavior(newState)
+              }
+          }
+        case Message.Private(taskId, message) =>
+          state.tasks.get(taskId) match {
+            case Some(TaskRunState.Running(runningSince, _, result)) =>
+              val newTaskState = message match {
+                case WorkerResponse.Cancelled =>
+                  result.delete()
+                  TaskRunState.Cancelled
+                case WorkerResponse.Done(totalCount) =>
+                  TaskRunState.Done(
+                    runningSince,
+                    System.currentTimeMillis,
+                    totalCount,
+                    result
                   )
-                )
-              case _ => Behaviors.same
-            }
-          case WorkerResponse.Done(taskId, totalCount) =>
-            state.tasks.get(taskId) match {
-              case Some(TaskRunState.Running(runningSince, _, result)) =>
-                behavior(
-                  context,
-                  state.pickNext(
-                    taskId,
-                    TaskRunState.Done(
-                      runningSince,
-                      System.currentTimeMillis,
-                      totalCount,
-                      result
-                    ),
-                    (newTaskId, totalCount) =>
-                      context.self ! Message.Private(
-                        WorkerResponse.Done(newTaskId, totalCount)
-                      )
-                  )
-                )
-              case _ => Behaviors.same
-            }
-        }
-    })
+              }
+              behavior(
+                state.pickNext(taskId, newTaskState, context.self ! done(_, _))
+              )
+            case _ => Behaviors.same
+          }
+      }
+    )
   def create(concurrency: Int): ActorRef[ConversionMessage] =
     ActorSystem(
-      Behaviors
-        .setup[Message](context =>
-          behavior(context, State(concurrency, 0, Vector.empty, Map.empty))
-        )
+      behavior(State(concurrency, 0, Vector.empty, Map.empty))
         .transformMessages[ConversionMessage](Message.Public(_)),
       "ConversionActor"
     )
