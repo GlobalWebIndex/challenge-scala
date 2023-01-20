@@ -6,13 +6,14 @@ import akka.actor.typed.Behavior
 import akka.actor.typed.scaladsl.ActorContext
 import akka.actor.typed.scaladsl.Behaviors
 import models.ConversionMessage
-import models.QueuedTask
 import models.TaskCurrentState
 import models.TaskInfo
 import models.TaskShortInfo
-
-import java.io.File
 import models.TaskState
+
+import java.nio.file.Files
+import java.nio.file.Path
+import akka.util.Timeout
 
 object ConversionActor {
   private sealed trait WorkerResponse
@@ -27,13 +28,14 @@ object ConversionActor {
     final case class Private(taskId: String, message: WorkerResponse)
         extends Message
   }
-  sealed trait TaskRunState
-  object TaskRunState {
-    final case class Scheduled(url: String, result: File) extends TaskRunState
+  private sealed trait TaskRunState
+  private object TaskRunState {
+    final case class Scheduled(url: String, result: Path) extends TaskRunState
     final case class Running(
         runningSince: Long,
         worker: ConversionWorker,
-        result: File
+        result: Path,
+        cancellationInProgress: Boolean
     ) extends TaskRunState
     object Cancelled extends TaskRunState
     object Failed extends TaskRunState
@@ -41,9 +43,10 @@ object ConversionActor {
         runningSince: Long,
         finishedAt: Long,
         linesProcessed: Long,
-        result: File
+        result: Path
     ) extends TaskRunState
   }
+  private final case class QueuedTask(taskId: String, url: String, result: Path)
   private final case class State(
       concurrency: Int,
       running: Int,
@@ -51,11 +54,11 @@ object ConversionActor {
       tasks: Map[String, TaskRunState]
   ) {
     def addTask(
+        context: ActorContext[_],
         taskId: String,
+        createWorker: (String, Path) => ConversionWorker,
         url: String,
-        result: File,
-        onDone: Long => Unit,
-        onFail: () => Unit
+        result: Path
     ): (TaskInfo, State) =
       if (running < concurrency) {
         val time = System.currentTimeMillis
@@ -65,8 +68,9 @@ object ConversionActor {
             running = running + 1,
             tasks = tasks + (taskId -> TaskRunState.Running(
               time,
-              new ConversionWorker(url, result, onDone, onFail),
-              result
+              createWorker(url, result),
+              result,
+              false
             ))
           )
         )
@@ -84,10 +88,10 @@ object ConversionActor {
         onTaskInfo: TaskInfo => Unit
     ): Boolean = {
       val task = tasks.get(taskId)
-      task.foreach(_ match {
+      task.foreach {
         case TaskRunState.Scheduled(_, _) =>
           onTaskInfo(TaskInfo(taskId, 0, 0, TaskCurrentState.Scheduled))
-        case TaskRunState.Running(runningSince, worker, _) =>
+        case TaskRunState.Running(runningSince, worker, _, _) =>
           worker.currentCount(count =>
             onTaskInfo(
               TaskInfo(
@@ -116,7 +120,7 @@ object ConversionActor {
               TaskCurrentState.Done(finishedAt, result)
             )
           )
-      })
+      }
       task.isDefined
     }
     def listTasks: Seq[TaskShortInfo] = tasks.toSeq.map {
@@ -124,7 +128,7 @@ object ConversionActor {
         state match {
           case TaskRunState.Scheduled(_, _) =>
             TaskShortInfo(taskId, TaskState.SCHEDULED)
-          case TaskRunState.Running(_, _, _) =>
+          case TaskRunState.Running(_, _, _, _) =>
             TaskShortInfo(taskId, TaskState.RUNNING)
           case TaskRunState.Cancelled =>
             TaskShortInfo(taskId, TaskState.CANCELLED)
@@ -137,31 +141,39 @@ object ConversionActor {
     def cancelTask(
         taskId: String,
         onCancel: () => Unit
-    ): (Boolean, Option[State]) =
-      tasks.get(taskId) match {
-        case None => (false, None)
-        case Some(st) =>
-          st match {
-            case TaskRunState.Running(_, worker, _) =>
-              worker.cancel(onCancel)
-              (true, None)
-            case TaskRunState.Scheduled(_, _) =>
-              val newState = copy(
-                queue = queue.filterNot(_.taskId == taskId),
-                tasks = tasks + (taskId -> TaskRunState.Cancelled)
+    ): (Boolean, Option[State]) = {
+      val task = tasks.get(taskId)
+      val newState = task.flatMap {
+        case TaskRunState.Running(s, worker, r, cancellationInProgress) =>
+          if (cancellationInProgress) None
+          else {
+            worker.cancel(onCancel)
+            Some(
+              copy(tasks =
+                tasks + (taskId -> TaskRunState.Running(s, worker, r, true))
               )
-              (true, Some(newState))
-            case TaskRunState.Cancelled | TaskRunState.Failed |
-                TaskRunState.Done(_, _, _, _) =>
-              (true, None)
+            )
           }
+        case TaskRunState.Scheduled(_, _) =>
+          Some(
+            copy(
+              queue = queue.filterNot(_.taskId == taskId),
+              tasks = tasks + (taskId -> TaskRunState.Cancelled)
+            )
+          )
+        case TaskRunState.Cancelled | TaskRunState.Failed |
+            TaskRunState.Done(_, _, _, _) =>
+          None
       }
+      (task.isDefined, newState)
+    }
     def pickNext(
+        context: ActorContext[_],
         taskId: String,
         newTaskState: TaskRunState,
         onDone: (String, Long) => Unit,
         onFail: () => Unit
-    ): State = {
+    )(implicit timeout: Timeout): State = {
       val newTasks = tasks + (taskId -> newTaskState)
       queue.headOption match {
         case None => copy(running = running - 1, tasks = newTasks)
@@ -171,12 +183,14 @@ object ConversionActor {
             tasks = newTasks + (newTask.taskId -> TaskRunState.Running(
               System.currentTimeMillis,
               new ConversionWorker(
+                context,
                 newTask.url,
                 newTask.result,
                 onDone(newTask.taskId, _),
                 onFail
               ),
-              newTask.result
+              newTask.result,
+              false
             ))
           )
       }
@@ -186,7 +200,9 @@ object ConversionActor {
     Message.Private(taskId, WorkerResponse.Done(totalCount))
   private def fail(taskId: String) =
     Message.Private(taskId, WorkerResponse.Failed)
-  private def behavior(state: State): Behavior[Message] =
+  private def behavior(
+      state: State
+  )(implicit timeout: Timeout): Behavior[Message] =
     Behaviors.receive((context, message) =>
       message match {
         case Message.Public(message) =>
@@ -194,11 +210,17 @@ object ConversionActor {
             case ConversionMessage.CreateTask(taskId, url, result, replyTo) =>
               val (taskInfo, newState) =
                 state.addTask(
+                  context,
                   taskId,
+                  new ConversionWorker(
+                    context,
+                    _,
+                    _,
+                    context.self ! done(taskId, _),
+                    () => context.self ! fail(taskId)
+                  ),
                   url,
-                  result,
-                  context.self ! done(taskId, _),
-                  () => context.self ! fail(taskId)
+                  result
                 )
               replyTo ! taskInfo
               behavior(newState)
@@ -225,13 +247,13 @@ object ConversionActor {
           }
         case Message.Private(taskId, message) =>
           state.tasks.get(taskId) match {
-            case Some(TaskRunState.Running(runningSince, _, result)) =>
+            case Some(TaskRunState.Running(runningSince, _, result, _)) =>
               val newTaskState = message match {
                 case WorkerResponse.Cancelled =>
-                  result.delete()
+                  Files.deleteIfExists(result)
                   TaskRunState.Cancelled
                 case WorkerResponse.Failed =>
-                  result.delete()
+                  Files.deleteIfExists(result)
                   TaskRunState.Failed
                 case WorkerResponse.Done(totalCount) =>
                   TaskRunState.Done(
@@ -243,6 +265,7 @@ object ConversionActor {
               }
               behavior(
                 state.pickNext(
+                  context,
                   taskId,
                   newTaskState,
                   context.self ! done(_, _),
@@ -253,7 +276,9 @@ object ConversionActor {
           }
       }
     )
-  def create(concurrency: Int): ActorRef[ConversionMessage] =
+  def create(
+      concurrency: Int
+  )(implicit timeout: Timeout): ActorRef[ConversionMessage] =
     ActorSystem(
       behavior(State(concurrency, 0, Vector.empty, Map.empty))
         .transformMessages[ConversionMessage](Message.Public(_)),

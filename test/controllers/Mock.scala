@@ -1,6 +1,7 @@
 package controllers
 
 import application.ChallengeStartup
+import play.api.Application
 import play.api.ApplicationLoader
 import play.api.Environment
 import play.api.Mode
@@ -14,5 +15,5 @@ object Mock {
         mode = Mode.Test
       )
     )
-  lazy val application = new ChallengeStartup(context).application
+  lazy val application: Application = new ChallengeStartup(context).application
 }

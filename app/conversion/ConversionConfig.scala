@@ -4,8 +4,8 @@ import play.api.Configuration
 
 import java.nio.file.Path
 import java.nio.file.Paths
-import scala.concurrent.duration.FiniteDuration
 import scala.concurrent.duration.Duration
+import scala.concurrent.duration.FiniteDuration
 
 final case class ConversionConfig(
     concurrency: Int,

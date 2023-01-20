@@ -13,9 +13,9 @@ import play.api.mvc.Action
 import play.api.mvc.ControllerComponents
 import play.api.mvc.RequestHeader
 
-import java.io.File
 import scala.concurrent.ExecutionContext
 import scala.concurrent.duration.Duration
+import scala.concurrent.duration.FiniteDuration
 
 class CsvToJsonController(
     config: Configuration,
@@ -24,7 +24,7 @@ class CsvToJsonController(
 )(implicit
     ec: ExecutionContext
 ) extends AbstractController(controllerComponents) {
-  val pollingPeriod =
+  val pollingPeriod: FiniteDuration =
     Duration(config.get[Long]("csvToJson.pollingPeriodMillis"), "ms")
 
   def createTask: Action[String] = Action.async(parse.tolerantText) {
@@ -63,9 +63,9 @@ class CsvToJsonController(
           case Some(details) =>
             details.state match {
               case TaskCurrentState.Done(_, result) =>
-                Ok.sendFile(
+                Ok.sendPath(
                   result,
-                  fileName = (_: File) => Some(s"$name.json")
+                  fileName = _ => Some(s"$name.json")
                 )
               case _ => BadRequest("Task is not finished")
             }
@@ -82,8 +82,8 @@ class CsvToJsonController(
       .prepend(Source.single(taskInfo))
       .takeWhile(
         _.state match {
-          case TaskCurrentState.Done(_, _) => false
-          case _                           => true
+          case TaskCurrentState.Scheduled | TaskCurrentState.Running => true
+          case _                                                     => false
         },
         inclusive = true
       )

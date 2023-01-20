@@ -1,16 +1,13 @@
 package conversion
 
-import akka.actor.typed.ActorRef
 import akka.actor.typed.Scheduler
 import akka.actor.typed.scaladsl.AskPattern._
 import akka.util.Timeout
 import models.ConversionMessage
-import models.TaskCurrentState
 import models.TaskInfo
-
-import java.io.File
-import scala.concurrent.Future
 import models.TaskShortInfo
+
+import scala.concurrent.Future
 
 class ConversionService(config: ConversionConfig)(implicit
     scheduler: Scheduler
@@ -25,7 +22,7 @@ class ConversionService(config: ConversionConfig)(implicit
       ConversionMessage.CreateTask(
         taskId,
         url,
-        config.resultDirectory.resolve(s"$taskId.json").toFile(),
+        config.resultDirectory.resolve(s"$taskId.json"),
         _
       )
     )
