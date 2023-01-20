@@ -27,11 +27,11 @@ ThisBuild / scalafixDependencies += "com.github.vovapolu" %% "scaluzzi" % "0.1.2
 ThisBuild / semanticdbEnabled := true
 ThisBuild / semanticdbVersion := scalafixSemanticdb.revision
 
-Compile / console / scalacOptions -= "-Wunused:imports"
-
 scalacOptions ++= Seq(
   "-feature",
   "-deprecation",
   "-Xfatal-warnings",
   "-Wunused:imports"
 )
+
+Compile / console / scalacOptions -= "-Wunused:imports"
