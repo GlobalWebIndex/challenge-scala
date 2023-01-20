@@ -18,6 +18,7 @@ object ConversionActor {
   private sealed trait WorkerResponse
   private object WorkerResponse {
     object Cancelled extends WorkerResponse
+    object Failed extends WorkerResponse
     final case class Done(totalCount: Long) extends WorkerResponse
   }
   private sealed trait Message
@@ -35,6 +36,7 @@ object ConversionActor {
         result: File
     ) extends TaskRunState
     object Cancelled extends TaskRunState
+    object Failed extends TaskRunState
     final case class Done(
         runningSince: Long,
         finishedAt: Long,
@@ -52,7 +54,8 @@ object ConversionActor {
         taskId: String,
         url: String,
         result: File,
-        onDone: Long => Unit
+        onDone: Long => Unit,
+        onFail: () => Unit
     ): (TaskInfo, State) =
       if (running < concurrency) {
         val time = System.currentTimeMillis
@@ -62,7 +65,7 @@ object ConversionActor {
             running = running + 1,
             tasks = tasks + (taskId -> TaskRunState.Running(
               time,
-              new ConversionWorker(url, result, onDone),
+              new ConversionWorker(url, result, onDone, onFail),
               result
             ))
           )
@@ -97,6 +100,8 @@ object ConversionActor {
           )
         case TaskRunState.Cancelled =>
           onTaskInfo(TaskInfo(taskId, 0, 0, TaskCurrentState.Cancelled))
+        case TaskRunState.Failed =>
+          onTaskInfo(TaskInfo(taskId, 0, 0, TaskCurrentState.Failed))
         case TaskRunState.Done(
               runningSince,
               finishedAt,
@@ -123,6 +128,8 @@ object ConversionActor {
             TaskShortInfo(taskId, TaskState.RUNNING)
           case TaskRunState.Cancelled =>
             TaskShortInfo(taskId, TaskState.CANCELLED)
+          case TaskRunState.Failed =>
+            TaskShortInfo(taskId, TaskState.FAILED)
           case TaskRunState.Done(_, finishedAt, _, result) =>
             TaskShortInfo(taskId, TaskState.DONE)
         }
@@ -144,14 +151,16 @@ object ConversionActor {
                 tasks = tasks + (taskId -> TaskRunState.Cancelled)
               )
               (true, Some(newState))
-            case TaskRunState.Cancelled        => (true, None)
-            case TaskRunState.Done(_, _, _, _) => (true, None)
+            case TaskRunState.Cancelled | TaskRunState.Failed |
+                TaskRunState.Done(_, _, _, _) =>
+              (true, None)
           }
       }
     def pickNext(
         taskId: String,
         newTaskState: TaskRunState,
-        onDone: (String, Long) => Unit
+        onDone: (String, Long) => Unit,
+        onFail: () => Unit
     ): State = {
       val newTasks = tasks + (taskId -> newTaskState)
       queue.headOption match {
@@ -164,7 +173,8 @@ object ConversionActor {
               new ConversionWorker(
                 newTask.url,
                 newTask.result,
-                onDone(newTask.taskId, _)
+                onDone(newTask.taskId, _),
+                onFail
               ),
               newTask.result
             ))
@@ -174,6 +184,8 @@ object ConversionActor {
   }
   private def done(taskId: String, totalCount: Long) =
     Message.Private(taskId, WorkerResponse.Done(totalCount))
+  private def fail(taskId: String) =
+    Message.Private(taskId, WorkerResponse.Failed)
   private def behavior(state: State): Behavior[Message] =
     Behaviors.receive((context, message) =>
       message match {
@@ -185,7 +197,8 @@ object ConversionActor {
                   taskId,
                   url,
                   result,
-                  context.self ! done(taskId, _)
+                  context.self ! done(taskId, _),
+                  () => context.self ! fail(taskId)
                 )
               replyTo ! taskInfo
               behavior(newState)
@@ -217,6 +230,9 @@ object ConversionActor {
                 case WorkerResponse.Cancelled =>
                   result.delete()
                   TaskRunState.Cancelled
+                case WorkerResponse.Failed =>
+                  result.delete()
+                  TaskRunState.Failed
                 case WorkerResponse.Done(totalCount) =>
                   TaskRunState.Done(
                     runningSince,
@@ -226,7 +242,12 @@ object ConversionActor {
                   )
               }
               behavior(
-                state.pickNext(taskId, newTaskState, context.self ! done(_, _))
+                state.pickNext(
+                  taskId,
+                  newTaskState,
+                  context.self ! done(_, _),
+                  () => context.self ! fail(taskId)
+                )
               )
             case _ => Behaviors.same
           }
