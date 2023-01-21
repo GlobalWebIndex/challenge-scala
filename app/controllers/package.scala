@@ -1,10 +1,15 @@
-import models.{TaskDetails, TaskId, TaskShortDetails}
-import pool.interface.{TaskCurrentState, TaskInfo, TaskShortInfo, TaskState}
+import models.TaskDetails
+import models.TaskId
+import models.TaskShortDetails
+import pool.interface.TaskCurrentState
+import pool.interface.TaskFinishReason
+import pool.interface.TaskInfo
+import pool.interface.TaskShortInfo
+import pool.interface.TaskState
 
 import play.api.mvc.RequestHeader
 
 import java.nio.file.Path
-import pool.interface.TaskFinishReason
 
 package object controllers {
   def taskShortInfoToDetails(info: TaskShortInfo[TaskId])(implicit

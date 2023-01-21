@@ -3,8 +3,10 @@ package conversion
 import com.typesafe.config.Config
 import pool.dependencies.Cfg
 
-import java.nio.file.{Path, Paths}
-import scala.concurrent.duration.{Duration, FiniteDuration}
+import java.nio.file.Path
+import java.nio.file.Paths
+import scala.concurrent.duration.Duration
+import scala.concurrent.duration.FiniteDuration
 
 final case class ConversionConfig(
     concurrency: Int,

@@ -2,7 +2,8 @@ package models
 
 import pool.interface.TaskState
 
-import play.api.libs.json.{Json, Writes}
+import play.api.libs.json.Json
+import play.api.libs.json.Writes
 
 final case class TaskDetails(
     linesProcessed: Long,

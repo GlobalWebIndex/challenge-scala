@@ -3,12 +3,15 @@ package conversion
 import conversion.ConversionConfig
 import models.TaskId
 import pool.dependencies.Saver
+import pool.interface.TaskFinishReason
 
-import akka.stream.scaladsl.{FileIO, Flow, Sink}
+import akka.stream.scaladsl.FileIO
+import akka.stream.scaladsl.Flow
+import akka.stream.scaladsl.Sink
 import akka.util.ByteString
 
-import java.nio.file.{Files, Path}
-import pool.interface.TaskFinishReason
+import java.nio.file.Files
+import java.nio.file.Path
 
 object FileSaver extends Saver[ConversionConfig, TaskId, Path, ByteString] {
   def make(file: Path): Sink[ByteString, _] =

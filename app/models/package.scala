@@ -1,6 +1,7 @@
 import pool.interface.TaskState
 
-import play.api.libs.json.{JsString, Writes}
+import play.api.libs.json.JsString
+import play.api.libs.json.Writes
 
 package object models {
   implicit val taskStateWrites: Writes[TaskState] = Writes[TaskState](_ match {

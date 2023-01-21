@@ -1,16 +1,24 @@
 package pool
 
-import pool.dependencies.{Cfg, Namer, Saver}
-import pool.interface.{PoolMessage, TaskInfo, TaskShortInfo}
-import pool.{PoolState, TaskRunState, WorkerFactory}
+import pool.PoolState
+import pool.TaskRunState
+import pool.WorkerFactory
+import pool.dependencies.Cfg
+import pool.dependencies.Namer
+import pool.dependencies.Saver
+import pool.interface.PoolMessage
+import pool.interface.TaskFinishReason
+import pool.interface.TaskInfo
+import pool.interface.TaskShortInfo
 
+import akka.actor.typed.ActorSystem
+import akka.actor.typed.Behavior
+import akka.actor.typed.Scheduler
 import akka.actor.typed.scaladsl.AskPattern._
 import akka.actor.typed.scaladsl.Behaviors
-import akka.actor.typed.{ActorSystem, Behavior, Scheduler}
 import akka.util.Timeout
 
 import scala.concurrent.Future
-import pool.interface.TaskFinishReason
 
 object WorkerPool {
   private sealed trait Message[ID, IN, OUT]

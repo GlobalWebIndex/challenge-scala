@@ -1,10 +1,14 @@
 package pool
 
-import pool.dependencies.{Fetch, Saver}
+import pool.dependencies.Fetch
+import pool.dependencies.Saver
 
 import akka.actor.typed.ActorSystem
 import akka.stream.OverflowStrategy
-import akka.stream.scaladsl.{Flow, Keep, Sink, Source}
+import akka.stream.scaladsl.Flow
+import akka.stream.scaladsl.Keep
+import akka.stream.scaladsl.Sink
+import akka.stream.scaladsl.Source
 import akka.stream.typed.scaladsl.ActorSource
 
 trait Worker {

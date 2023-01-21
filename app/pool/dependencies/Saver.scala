@@ -1,7 +1,8 @@
 package pool.dependencies
 
-import akka.stream.scaladsl.Sink
 import pool.interface.TaskFinishReason
+
+import akka.stream.scaladsl.Sink
 
 trait Saver[CFG, ID, OUT, ITEM] {
   def make(file: OUT): Sink[ITEM, _]

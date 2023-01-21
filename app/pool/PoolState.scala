@@ -1,13 +1,12 @@
 package pool
 
-import pool.interface.{
-  TaskCurrentState,
-  TaskInfo,
-  TaskShortInfo,
-  TaskState,
-  TaskFinishReason
-}
-import pool.{TaskRunState, Worker}
+import pool.TaskRunState
+import pool.Worker
+import pool.interface.TaskCurrentState
+import pool.interface.TaskFinishReason
+import pool.interface.TaskInfo
+import pool.interface.TaskShortInfo
+import pool.interface.TaskState
 
 import akka.actor.typed.ActorSystem
 import akka.util.Timeout

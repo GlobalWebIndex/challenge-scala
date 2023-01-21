@@ -4,7 +4,9 @@ import com.typesafe.config.Config
 import conversion.ConversionConfig
 import models.TaskId
 import pool.WorkerPool
-import pool.interface.{TaskCurrentState, TaskInfo}
+import pool.interface.TaskCurrentState
+import pool.interface.TaskFinishReason
+import pool.interface.TaskInfo
 
 import akka.NotUsed
 import akka.http.scaladsl.model.Uri
@@ -12,17 +14,15 @@ import akka.stream.scaladsl.Source
 import akka.util.ByteString
 import play.api.libs.json.Json
 import play.api.libs.json.Writes.keyMapWrites
-import play.api.mvc.{
-  AbstractController,
-  Action,
-  ControllerComponents,
-  RequestHeader
-}
-import pool.interface.TaskFinishReason
+import play.api.mvc.AbstractController
+import play.api.mvc.Action
+import play.api.mvc.ControllerComponents
+import play.api.mvc.RequestHeader
 
 import java.nio.file.Path
 import scala.concurrent.ExecutionContext
-import scala.concurrent.duration.{Duration, FiniteDuration}
+import scala.concurrent.duration.Duration
+import scala.concurrent.duration.FiniteDuration
 
 class CsvToJsonController(
     config: Config,

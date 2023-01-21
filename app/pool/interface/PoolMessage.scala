@@ -1,6 +1,7 @@
 package pool.interface
 
-import pool.interface.{TaskInfo, TaskShortInfo}
+import pool.interface.TaskInfo
+import pool.interface.TaskShortInfo
 
 import akka.actor.typed.ActorRef
 

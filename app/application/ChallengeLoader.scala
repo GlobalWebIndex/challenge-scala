@@ -1,18 +1,22 @@
 package application
 
 import com.softwaremill.macwire._
-import controllers.{Assets, CheckController, CsvToJsonController}
-import conversion.{ConversionConfig, FileSaver, HttpConversion, UUIDNamer}
-import pool.{DefaultWorkerFactory, WorkerPool}
+import controllers.Assets
+import controllers.CheckController
+import controllers.CsvToJsonController
+import conversion.ConversionConfig
+import conversion.FileSaver
+import conversion.HttpConversion
+import conversion.UUIDNamer
+import pool.DefaultWorkerFactory
+import pool.WorkerPool
 import router.Routes
 
+import play.api.Application
+import play.api.ApplicationLoader
+import play.api.BuiltInComponentsFromContext
+import play.api.LoggerConfigurator
 import play.api.routing.Router
-import play.api.{
-  Application,
-  ApplicationLoader,
-  BuiltInComponentsFromContext,
-  LoggerConfigurator
-}
 import play.filters.HttpFiltersComponents
 
 class ChallengeLoader extends ApplicationLoader {

@@ -4,8 +4,12 @@ import pool.dependencies.Fetch
 
 import akka.actor.typed.ActorSystem
 import akka.http.scaladsl.Http
-import akka.http.scaladsl.model.{HttpMethods, HttpRequest, MediaTypes, Uri}
-import akka.stream.alpakka.csv.scaladsl.{CsvParsing, CsvToMap}
+import akka.http.scaladsl.model.HttpMethods
+import akka.http.scaladsl.model.HttpRequest
+import akka.http.scaladsl.model.MediaTypes
+import akka.http.scaladsl.model.Uri
+import akka.stream.alpakka.csv.scaladsl.CsvParsing
+import akka.stream.alpakka.csv.scaladsl.CsvToMap
 import akka.stream.scaladsl.Source
 import akka.util.ByteString
 import play.api.libs.json.Json
