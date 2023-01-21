@@ -15,6 +15,7 @@ import play.api.routing.Router
 import play.filters.HttpFiltersComponents
 import pool.Config
 import pool.DefaultWorkerFactory
+import pool.WorkerFactory
 import pool.WorkerPool
 import router.Routes
 
@@ -32,20 +33,22 @@ class ChallengeStartup(context: ApplicationLoader.Context)
     with HttpFiltersComponents
     with controllers.AssetsComponents {
 
-  private lazy val conversionConfig = wireWith(Config.fromConf _)
+  private lazy val conversionConfig: Config = Config.fromConf(configuration)
 
-  private lazy val conversionSource = HttpConversion
-  private lazy val conversionSink = FileSaver
-  private lazy val namer = UUIDNamer
+  private lazy val workerCreator: WorkerFactory =
+    new DefaultWorkerFactory(HttpConversion, FileSaver)
 
-  private lazy val workerCreator = wire[DefaultWorkerFactory]
-
-  private lazy val conversionService = wire[WorkerPool]
+  private lazy val conversionPool =
+    new WorkerPool(conversionConfig, workerCreator, FileSaver, UUIDNamer)
 
   private lazy val assetsController = wire[Assets]
 
-  private lazy val checkController = wire[CheckController]
-  private lazy val csvToJsonController = wire[CsvToJsonController]
+  private lazy val checkController = new CheckController(controllerComponents)
+  private lazy val csvToJsonController = new CsvToJsonController(
+    configuration,
+    controllerComponents,
+    conversionPool
+  )
 
   override def router: Router = {
     lazy val prefix: String = ""

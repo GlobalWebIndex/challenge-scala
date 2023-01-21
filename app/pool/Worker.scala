@@ -32,7 +32,7 @@ trait WorkerFactory {
   )(implicit as: ActorSystem[_]): Worker
 }
 
-class DefaultWorkerFactory(source: Fetch, sink: Saver) extends WorkerFactory {
+class DefaultWorkerFactory(fetch: Fetch, saver: Saver) extends WorkerFactory {
   def createWorker(
       taskId: TaskId,
       url: Uri,
@@ -41,8 +41,8 @@ class DefaultWorkerFactory(source: Fetch, sink: Saver) extends WorkerFactory {
       onFailure: () => Unit
   )(implicit as: ActorSystem[_]): Worker =
     new WorkerImpl(
-      source.make(url),
-      sink.make(result),
+      fetch.make(url),
+      saver.make(result),
       onCount,
       onFailure
     )
