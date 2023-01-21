@@ -43,7 +43,7 @@ class CsvToJsonController(
     implicit request =>
       conversionService
         .createTask(request.body)
-        .map(info => Ok(Json.toJson(info.taskId)))
+        .map(info => Ok(info.taskId))
   }
   def listTasks: Action[Unit] = Action.async(parse.empty) { implicit request =>
     conversionService.listTasks.map(tasks =>

@@ -8,7 +8,7 @@ import java.nio.file.Path
 package object controllers {
   def taskShortInfoToDetails(info: TaskShortInfo[TaskId])(implicit
       requestHeader: RequestHeader
-  ): (TaskId, TaskShortDetails) = {
+  ): (String, TaskShortDetails) = {
     val resultUrl = info.state match {
       case TaskState.DONE =>
         Some(
@@ -19,7 +19,7 @@ package object controllers {
       case _ => None
     }
     (
-      info.taskId,
+      info.taskId.id,
       TaskShortDetails(info.state, resultUrl)
     )
   }

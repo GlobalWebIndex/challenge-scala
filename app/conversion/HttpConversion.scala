@@ -31,7 +31,6 @@ object HttpConversion extends Fetch[Uri, ByteString] {
       .via(CsvToMap.toMap())
       .map(Json.toJson(_))
       .map(Json.stringify(_))
-      .intersperse("[", ",\n", "]")
       .map(ByteString(_))
 
 }
