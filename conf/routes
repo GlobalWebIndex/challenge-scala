@@ -1,10 +1,10 @@
 # Conversion tasks management
 POST    /task                       controllers.CsvToJsonController.createTask
 GET     /task                       controllers.CsvToJsonController.listTasks
-GET     /task/:taskId               controllers.CsvToJsonController.taskDetails(taskId: String)
-DELETE  /task/:taskId               controllers.CsvToJsonController.cancelTask(taskId: String)
+GET     /task/:taskId               controllers.CsvToJsonController.taskDetails(taskId: TaskId)
+DELETE  /task/:taskId               controllers.CsvToJsonController.cancelTask(taskId: TaskId)
 
-GET     /task/result/:name          controllers.CsvToJsonController.taskResult(name: String)
+GET     /task/result/:name          controllers.CsvToJsonController.taskResult(name: TaskId)
 
 # Check if the app is running
 GET     /check                      controllers.CheckController.check

@@ -35,3 +35,5 @@ scalacOptions ++= Seq(
 )
 
 Compile / console / scalacOptions -= "-Wunused:imports"
+
+routesImport += "models.TaskId"

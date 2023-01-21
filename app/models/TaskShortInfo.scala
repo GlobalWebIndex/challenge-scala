@@ -1,6 +1,6 @@
 package models
 
 final case class TaskShortInfo(
-    taskId: String,
+    taskId: TaskId,
     state: TaskState
 )

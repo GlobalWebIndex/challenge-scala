@@ -1,7 +1,7 @@
 package models
 
 final case class TaskInfo(
-    taskId: String,
+    taskId: TaskId,
     linesProcessed: Long,
     runningSince: Long,
     state: TaskCurrentState

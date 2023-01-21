@@ -6,6 +6,9 @@ import controllers.CheckController
 import controllers.CsvToJsonController
 import conversion.ConversionConfig
 import conversion.ConversionService
+import conversion.FileConversionSink
+import conversion.HttpConversionSource
+import conversion.UUIDNamer
 import play.api.Application
 import play.api.ApplicationLoader
 import play.api.BuiltInComponentsFromContext
@@ -29,6 +32,10 @@ class ChallengeStartup(context: ApplicationLoader.Context)
     with controllers.AssetsComponents {
 
   private lazy val conversionConfig = wireWith(ConversionConfig.fromConf _)
+
+  private lazy val conversionSource = HttpConversionSource
+  private lazy val conversionSink = FileConversionSink
+  private lazy val namer = UUIDNamer
 
   private lazy val conversionService = wire[ConversionService]
 

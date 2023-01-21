@@ -1,14 +1,9 @@
 package conversion
 
-import akka.actor.typed.scaladsl.ActorContext
-import akka.http.scaladsl.Http
-import akka.http.scaladsl.model.HttpMethods
-import akka.http.scaladsl.model.HttpRequest
-import akka.http.scaladsl.model.MediaTypes
+import akka.actor.typed.ActorSystem
 import akka.stream.OverflowStrategy
 import akka.stream.alpakka.csv.scaladsl.CsvParsing
 import akka.stream.alpakka.csv.scaladsl.CsvToMap
-import akka.stream.scaladsl.FileIO
 import akka.stream.scaladsl.Flow
 import akka.stream.scaladsl.Keep
 import akka.stream.scaladsl.Sink
@@ -17,11 +12,8 @@ import akka.stream.typed.scaladsl.ActorSource
 import akka.util.ByteString
 import play.api.libs.json.Json
 
-import java.nio.file.Path
-
 private sealed trait Message
 private object Message {
-  object Complete extends Message
   object Line extends Message
   final case class Cancel(onCancel: () => Unit) extends Message
   final case class Count(onCount: Long => Unit) extends Message
@@ -32,46 +24,23 @@ private final case class CounterState(
     count: Long,
     onFinish: Long => Unit
 ) {
-  def handleMessage(
-      message: Message
-  ): CounterState = message match {
-    case Message.Complete         => this // shouldn't happen
+  def handleMessage(message: Message): CounterState = message match {
     case Message.Line             => copy(count = count + 1)
     case Message.Cancel(onCancel) => copy(onFinish = _ => onCancel())
     case Message.Failure(onFail)  => copy(onFinish = _ => onFail())
-    case Message.Count(onCount) =>
-      onCount(count)
-      this
+    case Message.Count(onCount)   => { onCount(count); this }
   }
   def finish(): Unit = onFinish(count)
 }
 
 class ConversionWorker(
-    context: ActorContext[_],
-    url: String,
-    result: Path,
+    source: Source[ByteString, _],
+    result: Sink[ByteString, _],
     onDone: Long => Unit,
     onFail: () => Unit
-) {
-  private implicit val as = context.system
-  private implicit val ec = as.executionContext
-
+)(implicit as: ActorSystem[_]) {
   private val items =
-    Source
-      .futureSource(
-        Http()
-          .singleRequest(HttpRequest(HttpMethods.GET, url))
-          .map(response =>
-            if (response.entity.contentType.mediaType == MediaTypes.`text/csv`)
-              response.entity.dataBytes
-            else
-              Source.failed(
-                new Exception(
-                  s"Incorrect content-type: ${response.entity.contentType}"
-                )
-              )
-          )
-      )
+    source
       .via(CsvParsing.lineScanner())
       .via(CsvToMap.toMap())
       .map(Json.toJson(_))
@@ -80,7 +49,7 @@ class ConversionWorker(
       .map(ByteString(_))
 
   private val commands = ActorSource.actorRef[Message](
-    { case Message.Complete => () },
+    PartialFunction.empty,
     PartialFunction.empty,
     0,
     OverflowStrategy.fail
@@ -97,14 +66,8 @@ class ConversionWorker(
       )
       .to(Sink.ignore)
 
-  private val commandActor =
-    items
-      .alsoToMat(counter)(Keep.right)
-      .to(FileIO.toPath(result))
-      .run()
+  private val actor = items.alsoToMat(counter)(Keep.right).to(result).run()
 
-  def cancel(onCancel: () => Unit): Unit =
-    commandActor ! Message.Cancel(onCancel)
-  def currentCount(onCount: Long => Unit): Unit =
-    commandActor ! Message.Count(onCount)
+  def cancel(onCancel: () => Unit): Unit = actor ! Message.Cancel(onCancel)
+  def currentCount(onCount: Long => Unit): Unit = actor ! Message.Count(onCount)
 }
