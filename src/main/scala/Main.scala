@@ -1,3 +1,4 @@
+import com.typesafe.config.Config
 import com.typesafe.config.ConfigFactory
 import controllers.CheckController
 import controllers.CsvToJsonController
@@ -17,8 +18,8 @@ import akka.http.scaladsl.model.Uri
 import akka.http.scaladsl.server.Directives._
 import akka.http.scaladsl.server.Route
 import akka.http.scaladsl.unmarshalling.FromRequestUnmarshaller
+
 import scala.io.StdIn
-import com.typesafe.config.Config
 
 object Main {
 

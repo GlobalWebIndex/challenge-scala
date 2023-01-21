@@ -1,6 +1,7 @@
 package conversion
 
 import models.TaskId
+import org.slf4j.Logger
 import pool.dependencies.Saver
 import pool.interface.TaskFinishReason
 
@@ -9,10 +10,9 @@ import akka.stream.scaladsl.Flow
 import akka.stream.scaladsl.Sink
 import akka.util.ByteString
 
+import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
-import org.slf4j.Logger
-import java.io.IOException
 
 class FileSaver(log: Logger)
     extends Saver[ConversionConfig, TaskId, Path, ByteString] {

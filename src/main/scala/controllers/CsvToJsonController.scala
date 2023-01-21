@@ -3,14 +3,17 @@ package controllers
 import com.typesafe.config.Config
 import conversion.ConversionConfig
 import de.heikoseeberger.akkahttpcirce.FailFastCirceSupport
+import io.circe.Printer
 import io.circe.syntax._
 import models.TaskId
+import org.slf4j.Logger
 import pool.WorkerPool
 import pool.interface.TaskCurrentState
 import pool.interface.TaskFinishReason
 import pool.interface.TaskInfo
 
 import akka.NotUsed
+import akka.http.scaladsl.model.ContentTypes
 import akka.http.scaladsl.model.HttpEntity
 import akka.http.scaladsl.model.MediaTypes
 import akka.http.scaladsl.model.StatusCodes
@@ -28,9 +31,6 @@ import java.nio.file.Path
 import scala.concurrent.ExecutionContext
 import scala.concurrent.duration.Duration
 import scala.concurrent.duration.FiniteDuration
-import akka.http.scaladsl.model.ContentTypes
-import io.circe.Printer
-import org.slf4j.Logger
 
 class CsvToJsonController(
     config: Config,

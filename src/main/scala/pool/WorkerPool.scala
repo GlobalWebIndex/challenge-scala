@@ -1,5 +1,6 @@
 package pool
 
+import org.slf4j.Logger
 import pool.dependencies.Cfg
 import pool.dependencies.Namer
 import pool.dependencies.Saver
@@ -15,7 +16,6 @@ import akka.actor.typed.scaladsl.Behaviors
 import akka.util.Timeout
 
 import scala.concurrent.Future
-import org.slf4j.Logger
 
 object WorkerPool {
   private sealed trait Message[ID, IN, OUT]
