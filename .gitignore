@@ -3,3 +3,4 @@
 .bloop
 .metals
 target
+results/*.json
