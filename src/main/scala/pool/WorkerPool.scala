@@ -15,6 +15,7 @@ import akka.actor.typed.scaladsl.Behaviors
 import akka.util.Timeout
 
 import scala.concurrent.Future
+import org.slf4j.Logger
 
 object WorkerPool {
   private sealed trait Message[ID, IN, OUT]
@@ -32,9 +33,11 @@ object WorkerPool {
 
 class WorkerPool[CFG <: Cfg, ID, IN, OUT, ITEM](
     config: CFG,
+    log: Logger,
     workerCreator: WorkerFactory[ID, IN, OUT],
     saver: Saver[CFG, ID, OUT, ITEM],
-    namer: Namer[ID]
+    namer: Namer[ID],
+    actorName: String
 )(implicit
     ctx: ActorContext[_]
 ) {
@@ -54,10 +57,11 @@ class WorkerPool[CFG <: Cfg, ID, IN, OUT, ITEM](
             context.self ! Message.Private(taskId, _, TaskFinishReason.Done),
             context.self ! Message.Private(taskId, _, TaskFinishReason.Failed)
           )
+        log.info(s"Worker pool $actorName created")
         behavior(PoolState(config.concurrency, createWorker))
       }
       .transformMessages[PoolMessage[ID, IN, OUT]](Message.Public(_)),
-    "PoolActor"
+    actorName
   )
 
   def createTask(url: IN): Future[TaskInfo[ID, OUT]] = {
@@ -111,6 +115,9 @@ class WorkerPool[CFG <: Cfg, ID, IN, OUT, ITEM](
               }
           }
         case Message.Private(taskId, totalCount, reason) =>
+          log.debug(
+            s"Task $taskId is over — $totalCount items processed, final result: ${reason.getClass().getSimpleName()}"
+          )
           state.tasks.get(taskId) match {
             case Some(TaskRunState.Running(runningSince, _, result, _)) =>
               saver.unmake(result, reason)

@@ -32,20 +32,25 @@ object Main {
 
   private def createRoute(implicit actorContext: ActorContext[_]): Route = {
     implicit val ec = actorContext.executionContext
+    val log = actorContext.log
 
     val config = ConfigFactory.load()
 
-    val workerFactory = new DefaultWorkerFactory(HttpConversion, FileSaver)
+    val saver = new FileSaver(log)
+    val workerFactory = new DefaultWorkerFactory(HttpConversion, saver)
     val conversionPool =
       new WorkerPool(
         ConversionConfig.fromConf(config.getConfig("conversion")),
+        log,
         workerFactory,
-        FileSaver,
-        UUIDNamer
+        saver,
+        UUIDNamer,
+        "conversionPool"
       )
 
-    val checkController = new CheckController()
-    val csvToJsonController = new CsvToJsonController(config, conversionPool)
+    val checkController = new CheckController(actorContext.log)
+    val csvToJsonController =
+      new CsvToJsonController(config, log, conversionPool)
 
     concat(
       (get & path("check")) {
@@ -82,9 +87,11 @@ object Main {
         Behaviors.receiveMessage {
           case None => Behaviors.same
           case Some(binding) =>
+            ctx.log.info("Server started")
             Behaviors.receiveMessage {
               case None =>
                 binding.unbind()
+                ctx.log.info("Server stopped")
                 Behaviors.stopped
               case Some(_) => Behaviors.same
             }

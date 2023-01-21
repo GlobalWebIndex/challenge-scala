@@ -30,9 +30,11 @@ import scala.concurrent.duration.Duration
 import scala.concurrent.duration.FiniteDuration
 import akka.http.scaladsl.model.ContentTypes
 import io.circe.Printer
+import org.slf4j.Logger
 
 class CsvToJsonController(
     config: Config,
+    log: Logger,
     workerPool: WorkerPool[ConversionConfig, TaskId, Uri, Path, ByteString]
 ) extends FailFastCirceSupport {
   private implicit val printer = Printer(dropNullValues = true, indent = "")
@@ -40,13 +42,14 @@ class CsvToJsonController(
   private val pollingPeriod: FiniteDuration =
     Duration(config.getLong("csvToJson.pollingPeriodMillis"), "ms")
 
-  def createTask(
-      uri: Uri
-  )(implicit ec: ExecutionContext): Route =
+  def createTask(uri: Uri)(implicit ec: ExecutionContext): Route = {
+    log.debug(s"Creating a task to convert csv from $uri")
     complete(workerPool.createTask(uri).map(_.taskId))
+  }
   def listTasks(resultUrl: TaskId => String)(implicit
       ec: ExecutionContext
-  ): Route =
+  ): Route = {
+    log.debug("Listing all tasks")
     complete(
       workerPool.listTasks.map(tasks =>
         tasks
@@ -54,12 +57,15 @@ class CsvToJsonController(
           .toMap
       )
     )
-  def taskDetails(
-      taskId: TaskId,
-      resultUrl: TaskId => String
-  )(implicit ec: ExecutionContext): Route =
-    onSuccess(workerPool.getTask(taskId))(_ match {
-      case None => complete(StatusCodes.NotFound, HttpEntity("No such task"))
+  }
+  def taskDetails(taskId: TaskId, resultUrl: TaskId => String)(implicit
+      ec: ExecutionContext
+  ): Route = {
+    log.debug(s"Getting task details for the task $taskId")
+    onSuccess(workerPool.getTask(taskId)) {
+      case None =>
+        log.info(s"Task details for $taskId do not exist")
+        complete(StatusCodes.NotFound, HttpEntity("No such task"))
       case Some(info) =>
         complete(
           HttpEntity(
@@ -67,22 +73,25 @@ class CsvToJsonController(
             taskDetailsStream(info, resultUrl).map(ByteString(_))
           )
         )
-    })
-  def cancelTask(taskId: TaskId)(implicit
-      ec: ExecutionContext
-  ): Route =
+    }
+  }
+  def cancelTask(taskId: TaskId)(implicit ec: ExecutionContext): Route = {
+    log.debug(s"Cancelling the task $taskId")
     onSuccess(workerPool.cancelTask(taskId))(success =>
       if (success) complete(HttpEntity("Task cancelled"))
-      else complete(StatusCodes.NotFound, HttpEntity("Task not found"))
+      else {
+        log.info(s"Task $taskId doesn't exist and can't be cancelled")
+        complete(StatusCodes.NotFound, HttpEntity("Task not found"))
+      }
     )
+  }
 
-  def taskResult(
-      taskId: TaskId
-  )(implicit
-      ec: ExecutionContext
-  ): Route =
-    onSuccess(workerPool.getTask(taskId))(_ match {
-      case None => complete(StatusCodes.NotFound, HttpEntity("No such task"))
+  def taskResult(taskId: TaskId)(implicit ec: ExecutionContext): Route = {
+    log.debug(s"Fetching results for the task $taskId")
+    onSuccess(workerPool.getTask(taskId)) {
+      case None =>
+        log.info(s"Task $taskId doesn't exist, and neither do it's results")
+        complete(StatusCodes.NotFound, HttpEntity("No such task"))
       case Some(details) =>
         details.state match {
           case TaskCurrentState.Finished(_, result, TaskFinishReason.Done) =>
@@ -101,9 +110,13 @@ class CsvToJsonController(
               )
             )
           case _ =>
+            log.warn(
+              s"Results for the task $taskId requested, but it is not finished yet"
+            )
             complete(StatusCodes.BadRequest, HttpEntity("Task is not finished"))
         }
-    })
+    }
+  }
 
   private def taskDetailsStream(
       taskInfo: TaskInfo[TaskId, Path],
