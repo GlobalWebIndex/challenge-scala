@@ -1,0 +1,98 @@
+import com.typesafe.config.ConfigFactory
+import controllers.CheckController
+import controllers.CsvToJsonController
+import conversion.ConversionConfig
+import conversion.FileSaver
+import conversion.HttpConversion
+import conversion.UUIDNamer
+import models.TaskId
+import pool.DefaultWorkerFactory
+import pool.WorkerPool
+
+import akka.actor.typed.ActorSystem
+import akka.actor.typed.scaladsl.ActorContext
+import akka.actor.typed.scaladsl.Behaviors
+import akka.http.scaladsl.Http
+import akka.http.scaladsl.model.Uri
+import akka.http.scaladsl.server.Directives._
+import akka.http.scaladsl.server.Route
+import akka.http.scaladsl.unmarshalling.FromRequestUnmarshaller
+import scala.io.StdIn
+
+object Main {
+
+  private implicit val uriUnmarshaller: FromRequestUnmarshaller[Uri] =
+    implicitly[FromRequestUnmarshaller[String]].map(Uri(_))
+
+  private def taskResultUrl(requestUri: Uri, taskId: TaskId): String = {
+    val link = s"/task/result/${taskId.id}"
+    if (requestUri.isAbsolute) Uri(link).resolvedAgainst(requestUri).toString()
+    else link
+  }
+
+  private def createRoute(implicit actorContext: ActorContext[_]): Route = {
+    implicit val ec = actorContext.executionContext
+
+    val config = ConfigFactory.load()
+
+    val workerFactory = new DefaultWorkerFactory(HttpConversion, FileSaver)
+    val conversionPool =
+      new WorkerPool(
+        ConversionConfig.fromConf(config.getConfig("conversion")),
+        workerFactory,
+        FileSaver,
+        UUIDNamer
+      )
+
+    val checkController = new CheckController()
+    val csvToJsonController = new CsvToJsonController(config, conversionPool)
+
+    concat(
+      (get & path("check")) {
+        checkController.check
+      },
+      (post & path("task") & decodeRequest & entity(as[Uri])) {
+        csvToJsonController.createTask(_)
+      },
+      (get & path("task") & extractUri) { uri =>
+        csvToJsonController.listTasks(taskResultUrl(uri, _))
+      },
+      (get & path("task" / TaskId.Matcher) & extractUri) { (taskId, uri) =>
+        csvToJsonController.taskDetails(taskId, taskResultUrl(uri, _))
+      },
+      (delete & path("task" / TaskId.Matcher)) {
+        csvToJsonController.cancelTask(_)
+      },
+      (get & path("task" / "result" / TaskId.Matcher)) {
+        csvToJsonController.taskResult(_)
+      }
+    )
+  }
+
+  def main(args: Array[String]): Unit = {
+    val server = ActorSystem(
+      Behaviors.setup[Option[Http.ServerBinding]] { ctx =>
+        implicit val system = ctx.system
+        implicit val ec = ctx.executionContext
+        ctx.pipeToSelf(
+          Http()
+            .newServerAt("localhost", 9000)
+            .bind(createRoute(ctx))
+        )(_.toOption)
+        Behaviors.receiveMessage {
+          case None => Behaviors.same
+          case Some(binding) =>
+            Behaviors.receiveMessage {
+              case None =>
+                binding.unbind()
+                Behaviors.stopped
+              case Some(_) => Behaviors.same
+            }
+        }
+      },
+      "challenge"
+    )
+    StdIn.readLine()
+    server ! None
+  }
+}
