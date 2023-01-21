@@ -18,6 +18,7 @@ import play.api.mvc.{
   ControllerComponents,
   RequestHeader
 }
+import pool.interface.TaskFinishReason
 
 import java.nio.file.Path
 import scala.concurrent.ExecutionContext
@@ -76,7 +77,8 @@ class CsvToJsonController(
           case None => NotFound("No such task")
           case Some(details) =>
             details.state match {
-              case TaskCurrentState.Done(_, result) =>
+              case TaskCurrentState
+                    .Finished(_, result, TaskFinishReason.Done) =>
                 Ok.sendPath(
                   result,
                   fileName = _ => Some(s"${taskId.id}.json")
@@ -97,9 +99,7 @@ class CsvToJsonController(
       .takeWhile(
         _.state match {
           case TaskCurrentState.Scheduled() | TaskCurrentState.Running() => true
-          case TaskCurrentState.Cancelled() | TaskCurrentState.Failed() |
-              TaskCurrentState.Done(_, _) =>
-            false
+          case TaskCurrentState.Finished(_, _, _) => false
         },
         inclusive = true
       )

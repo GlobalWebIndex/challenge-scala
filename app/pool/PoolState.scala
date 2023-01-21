@@ -1,6 +1,12 @@
 package pool
 
-import pool.interface.{TaskCurrentState, TaskInfo, TaskShortInfo, TaskState}
+import pool.interface.{
+  TaskCurrentState,
+  TaskInfo,
+  TaskShortInfo,
+  TaskState,
+  TaskFinishReason
+}
 import pool.{TaskRunState, Worker}
 
 import akka.actor.typed.ActorSystem
@@ -69,22 +75,19 @@ final case class PoolState[ID, IN, OUT](
             )
           )
         )
-      case TaskRunState.Cancelled() =>
-        onTaskInfo(TaskInfo(taskId, 0, 0, TaskCurrentState.Cancelled()))
-      case TaskRunState.Failed() =>
-        onTaskInfo(TaskInfo(taskId, 0, 0, TaskCurrentState.Failed()))
-      case TaskRunState.Done(
+      case TaskRunState.Finished(
             runningSince,
             finishedAt,
             linesProcessed,
-            result
+            result,
+            reason
           ) =>
         onTaskInfo(
           TaskInfo(
             taskId,
             linesProcessed,
             runningSince,
-            TaskCurrentState.Done(finishedAt, result)
+            TaskCurrentState.Finished(finishedAt, result, reason)
           )
         )
     }
@@ -97,17 +100,20 @@ final case class PoolState[ID, IN, OUT](
           TaskShortInfo(taskId, TaskState.SCHEDULED)
         case TaskRunState.Running(_, _, _, _) =>
           TaskShortInfo(taskId, TaskState.RUNNING)
-        case TaskRunState.Cancelled() =>
-          TaskShortInfo(taskId, TaskState.CANCELLED)
-        case TaskRunState.Failed() =>
-          TaskShortInfo(taskId, TaskState.FAILED)
-        case TaskRunState.Done(_, finishedAt, _, result) =>
-          TaskShortInfo(taskId, TaskState.DONE)
+        case TaskRunState.Finished(_, _, _, _, reason) =>
+          reason match {
+            case TaskFinishReason.Cancelled =>
+              TaskShortInfo(taskId, TaskState.CANCELLED)
+            case TaskFinishReason.Failed =>
+              TaskShortInfo(taskId, TaskState.FAILED)
+            case TaskFinishReason.Done =>
+              TaskShortInfo(taskId, TaskState.DONE)
+          }
       }
   }
   def cancelTask(
       taskId: ID,
-      onCancel: () => Unit
+      onCancel: Long => Unit
   ): (Boolean, Option[PoolState[ID, IN, OUT]]) = {
     val task = tasks.get(taskId)
     val newState = task.flatMap {
@@ -122,15 +128,15 @@ final case class PoolState[ID, IN, OUT](
             )
           )
         }
-      case TaskRunState.Scheduled(_, _) =>
+      case TaskRunState.Scheduled(_, result) =>
         Some(
           copy(
             queue = queue.filterNot(_.taskId == taskId),
-            tasks = tasks + (taskId -> TaskRunState.Cancelled[IN, OUT]())
+            tasks = tasks + (taskId -> TaskRunState
+              .Finished[IN, OUT](0, 0, 0, result, TaskFinishReason.Cancelled))
           )
         )
-      case TaskRunState.Cancelled() | TaskRunState.Failed() |
-          TaskRunState.Done(_, _, _, _) =>
+      case TaskRunState.Finished(_, _, _, _, _) =>
         None
     }
     (task.isDefined, newState)

@@ -10,21 +10,19 @@ import akka.actor.typed.{ActorSystem, Behavior, Scheduler}
 import akka.util.Timeout
 
 import scala.concurrent.Future
+import pool.interface.TaskFinishReason
 
 object WorkerPool {
-  private sealed trait WorkerResponse
-  private object WorkerResponse {
-    object Cancelled extends WorkerResponse
-    object Failed extends WorkerResponse
-    final case class Done(totalCount: Long) extends WorkerResponse
-  }
   private sealed trait Message[ID, IN, OUT]
   private object Message {
     final case class Public[ID, IN, OUT](
         message: PoolMessage[ID, IN, OUT]
     ) extends Message[ID, IN, OUT]
-    final case class Private[ID, IN, OUT](taskId: ID, message: WorkerResponse)
-        extends Message[ID, IN, OUT]
+    final case class Private[ID, IN, OUT](
+        taskId: ID,
+        totalCount: Long,
+        message: TaskFinishReason
+    ) extends Message[ID, IN, OUT]
   }
 }
 
@@ -49,10 +47,8 @@ class WorkerPool[CFG <: Cfg, ID, IN, OUT, ITEM](
             taskId,
             url,
             result,
-            count =>
-              context.self ! Message
-                .Private(taskId, WorkerResponse.Done(count)),
-            () => context.self ! Message.Private(taskId, WorkerResponse.Failed)
+            context.self ! Message.Private(taskId, _, TaskFinishReason.Done),
+            context.self ! Message.Private(taskId, _, TaskFinishReason.Failed)
           )
         behavior(PoolState(config.concurrency, createWorker))
       }
@@ -98,11 +94,11 @@ class WorkerPool[CFG <: Cfg, ID, IN, OUT, ITEM](
             case PoolMessage.CancelTask(taskId, replyTo) =>
               val (response, newStateOpt) = state.cancelTask(
                 taskId,
-                () =>
-                  context.self ! Message.Private(
-                    taskId,
-                    WorkerResponse.Cancelled
-                  )
+                context.self ! Message.Private(
+                  taskId,
+                  _,
+                  TaskFinishReason.Cancelled
+                )
               )
               replyTo ! response
               newStateOpt match {
@@ -110,25 +106,18 @@ class WorkerPool[CFG <: Cfg, ID, IN, OUT, ITEM](
                 case Some(newState) => behavior(newState)
               }
           }
-        case Message.Private(taskId, message) =>
+        case Message.Private(taskId, totalCount, reason) =>
           state.tasks.get(taskId) match {
             case Some(TaskRunState.Running(runningSince, _, result, _)) =>
               implicit val system = context.system
-              val newTaskState: TaskRunState[IN, OUT] = message match {
-                case WorkerResponse.Cancelled =>
-                  saver.unmake(result)
-                  TaskRunState.Cancelled()
-                case WorkerResponse.Failed =>
-                  saver.unmake(result)
-                  TaskRunState.Failed()
-                case WorkerResponse.Done(totalCount) =>
-                  TaskRunState.Done(
-                    runningSince,
-                    System.currentTimeMillis,
-                    totalCount,
-                    result
-                  )
-              }
+              saver.unmake(result, reason)
+              val newTaskState = TaskRunState.Finished[IN, OUT](
+                runningSince,
+                System.currentTimeMillis,
+                totalCount,
+                result,
+                reason
+              )
               behavior(state.pickNext(taskId, newTaskState))
             case _ => Behaviors.same
           }

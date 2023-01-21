@@ -1,6 +1,7 @@
 package pool
 
 import pool.Worker
+import pool.interface.TaskFinishReason
 
 sealed trait TaskRunState[IN, OUT]
 object TaskRunState {
@@ -12,12 +13,11 @@ object TaskRunState {
       result: OUT,
       cancellationInProgress: Boolean
   ) extends TaskRunState[IN, OUT]
-  final case class Cancelled[IN, OUT]() extends TaskRunState[IN, OUT]
-  final case class Failed[IN, OUT]() extends TaskRunState[IN, OUT]
-  final case class Done[IN, OUT](
+  final case class Finished[IN, OUT](
       runningSince: Long,
       finishedAt: Long,
       linesProcessed: Long,
-      result: OUT
+      result: OUT,
+      reason: TaskFinishReason
   ) extends TaskRunState[IN, OUT]
 }
