@@ -1,9 +1,9 @@
 package models
 
 import akka.actor.typed.ActorRef
+import akka.http.scaladsl.model.Uri
 
 import java.nio.file.Path
-import akka.http.scaladsl.model.Uri
 
 sealed trait ConversionMessage
 object ConversionMessage {

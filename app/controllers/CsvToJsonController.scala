@@ -1,6 +1,7 @@
 package controllers
 
 import akka.NotUsed
+import akka.http.scaladsl.model.Uri
 import akka.stream.scaladsl.Source
 import conversion.ConversionService
 import models.TaskCurrentState
@@ -17,7 +18,6 @@ import play.api.mvc.RequestHeader
 import scala.concurrent.ExecutionContext
 import scala.concurrent.duration.Duration
 import scala.concurrent.duration.FiniteDuration
-import akka.http.scaladsl.model.Uri
 
 class CsvToJsonController(
     config: Configuration,

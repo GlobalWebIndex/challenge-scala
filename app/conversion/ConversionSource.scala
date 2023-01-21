@@ -5,9 +5,9 @@ import akka.http.scaladsl.Http
 import akka.http.scaladsl.model.HttpMethods
 import akka.http.scaladsl.model.HttpRequest
 import akka.http.scaladsl.model.MediaTypes
+import akka.http.scaladsl.model.Uri
 import akka.stream.scaladsl.Source
 import akka.util.ByteString
-import akka.http.scaladsl.model.Uri
 
 trait ConversionSource {
   def make(url: Uri)(implicit as: ActorSystem[_]): Source[ByteString, _]

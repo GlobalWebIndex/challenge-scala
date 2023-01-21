@@ -6,6 +6,7 @@ import controllers.CheckController
 import controllers.CsvToJsonController
 import conversion.ConversionConfig
 import conversion.ConversionService
+import conversion.DefaultConversionWorkerCreator
 import conversion.FileConversionSink
 import conversion.HttpConversionSource
 import conversion.UUIDNamer
@@ -36,6 +37,8 @@ class ChallengeStartup(context: ApplicationLoader.Context)
   private lazy val conversionSource = HttpConversionSource
   private lazy val conversionSink = FileConversionSink
   private lazy val namer = UUIDNamer
+
+  private lazy val workerCreator = wire[DefaultConversionWorkerCreator]
 
   private lazy val conversionService = wire[ConversionService]
 
