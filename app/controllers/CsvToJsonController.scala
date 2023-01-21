@@ -1,28 +1,38 @@
 package controllers
 
+import conversion.ConversionConfig
+import models.TaskId
+import pool.WorkerPool
+import pool.interface.{TaskCurrentState, TaskInfo}
+
 import akka.NotUsed
 import akka.http.scaladsl.model.Uri
 import akka.stream.scaladsl.Source
-import models.TaskCurrentState
-import models.TaskId
-import models.TaskInfo
+import akka.util.ByteString
 import play.api.Configuration
 import play.api.libs.json.Json
 import play.api.libs.json.Writes.keyMapWrites
-import play.api.mvc.AbstractController
-import play.api.mvc.Action
-import play.api.mvc.ControllerComponents
-import play.api.mvc.RequestHeader
-import pool.WorkerPool
+import play.api.mvc.{
+  AbstractController,
+  Action,
+  ControllerComponents,
+  RequestHeader
+}
 
+import java.nio.file.Path
 import scala.concurrent.ExecutionContext
-import scala.concurrent.duration.Duration
-import scala.concurrent.duration.FiniteDuration
+import scala.concurrent.duration.{Duration, FiniteDuration}
 
 class CsvToJsonController(
     config: Configuration,
     controllerComponents: ControllerComponents,
-    conversionService: WorkerPool
+    conversionService: WorkerPool[
+      ConversionConfig,
+      TaskId,
+      Uri,
+      Path,
+      ByteString
+    ]
 )(implicit
     ec: ExecutionContext
 ) extends AbstractController(controllerComponents) {
@@ -77,7 +87,7 @@ class CsvToJsonController(
   }
 
   private def taskDetailsStream(
-      taskInfo: TaskInfo
+      taskInfo: TaskInfo[TaskId, Path]
   )(implicit request: RequestHeader) =
     Source
       .tick(pollingPeriod, pollingPeriod, NotUsed)
@@ -86,9 +96,9 @@ class CsvToJsonController(
       .prepend(Source.single(taskInfo))
       .takeWhile(
         _.state match {
-          case TaskCurrentState.Scheduled | TaskCurrentState.Running => true
-          case TaskCurrentState.Cancelled |
-              TaskCurrentState.Failed | TaskCurrentState.Done(_, _) =>
+          case TaskCurrentState.Scheduled() | TaskCurrentState.Running() => true
+          case TaskCurrentState.Cancelled() | TaskCurrentState.Failed() |
+              TaskCurrentState.Done(_, _) =>
             false
         },
         inclusive = true

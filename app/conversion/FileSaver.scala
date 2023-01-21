@@ -1,13 +1,17 @@
 package conversion
 
-import akka.stream.scaladsl.FileIO
-import akka.stream.scaladsl.Sink
-import akka.util.ByteString
-import pool.Saver
+import conversion.ConversionConfig
+import models.TaskId
+import pool.dependencies.Saver
 
-import java.nio.file.Files
-import java.nio.file.Path
-object FileSaver extends Saver {
+import akka.stream.scaladsl.{FileIO, Sink}
+import akka.util.ByteString
+
+import java.nio.file.{Files, Path}
+
+object FileSaver extends Saver[ConversionConfig, TaskId, Path, ByteString] {
   def make(file: Path): Sink[ByteString, _] = FileIO.toPath(file)
   def unmake(file: Path): Unit = Files.deleteIfExists(file)
+  def target(config: ConversionConfig, taskId: TaskId): Path =
+    config.resultDirectory.resolve(s"${taskId.id}.json")
 }

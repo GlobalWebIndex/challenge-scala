@@ -1,15 +1,16 @@
 package conversion
 
+import pool.dependencies.Fetch
+
 import akka.actor.typed.ActorSystem
 import akka.http.scaladsl.Http
-import akka.http.scaladsl.model.HttpMethods
-import akka.http.scaladsl.model.HttpRequest
-import akka.http.scaladsl.model.MediaTypes
-import akka.http.scaladsl.model.Uri
+import akka.http.scaladsl.model.{HttpMethods, HttpRequest, MediaTypes, Uri}
+import akka.stream.alpakka.csv.scaladsl.{CsvParsing, CsvToMap}
 import akka.stream.scaladsl.Source
 import akka.util.ByteString
-import pool.Fetch
-object HttpConversion extends Fetch {
+import play.api.libs.json.Json
+
+object HttpConversion extends Fetch[Uri, ByteString] {
   def make(url: Uri)(implicit as: ActorSystem[_]): Source[ByteString, _] =
     Source
       .futureSource(
@@ -26,4 +27,11 @@ object HttpConversion extends Fetch {
               )
           )(as.executionContext)
       )
+      .via(CsvParsing.lineScanner())
+      .via(CsvToMap.toMap())
+      .map(Json.toJson(_))
+      .map(Json.stringify(_))
+      .intersperse("[", ",\n", "]")
+      .map(ByteString(_))
+
 }

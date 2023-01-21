@@ -1,24 +1,23 @@
 package pool
 
-import akka.http.scaladsl.model.Uri
 import pool.Worker
 
-import java.nio.file.Path
-sealed trait TaskRunState
+sealed trait TaskRunState[IN, OUT]
 object TaskRunState {
-  final case class Scheduled(url: Uri, result: Path) extends TaskRunState
-  final case class Running(
+  final case class Scheduled[IN, OUT](url: IN, result: OUT)
+      extends TaskRunState[IN, OUT]
+  final case class Running[IN, OUT](
       runningSince: Long,
       worker: Worker,
-      result: Path,
+      result: OUT,
       cancellationInProgress: Boolean
-  ) extends TaskRunState
-  object Cancelled extends TaskRunState
-  object Failed extends TaskRunState
-  final case class Done(
+  ) extends TaskRunState[IN, OUT]
+  final case class Cancelled[IN, OUT]() extends TaskRunState[IN, OUT]
+  final case class Failed[IN, OUT]() extends TaskRunState[IN, OUT]
+  final case class Done[IN, OUT](
       runningSince: Long,
       finishedAt: Long,
       linesProcessed: Long,
-      result: Path
-  ) extends TaskRunState
+      result: OUT
+  ) extends TaskRunState[IN, OUT]
 }

@@ -1,15 +1,8 @@
-package models
+import pool.interface.TaskState
 
-import play.api.libs.json.JsString
-import play.api.libs.json.Writes
+import play.api.libs.json.{JsString, Writes}
 
-sealed trait TaskState
-object TaskState {
-  object SCHEDULED extends TaskState
-  object RUNNING extends TaskState
-  object DONE extends TaskState
-  object FAILED extends TaskState
-  object CANCELLED extends TaskState
+package object models {
   implicit val taskStateWrites: Writes[TaskState] = Writes[TaskState](_ match {
     case TaskState.SCHEDULED => JsString("SCHEDULED")
     case TaskState.RUNNING   => JsString("RUNNING")

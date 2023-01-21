@@ -1,6 +1,7 @@
 package controllers
 
 import org.scalatestplus.play.PlaySpec
+
 import play.api.test.FakeRequest
 import play.api.test.Helpers._
 

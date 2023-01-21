@@ -1,10 +1,8 @@
 package controllers
 
 import application.ChallengeStartup
-import play.api.Application
-import play.api.ApplicationLoader
-import play.api.Environment
-import play.api.Mode
+
+import play.api.{Application, ApplicationLoader, Environment, Mode}
 
 object Mock {
   lazy val context: ApplicationLoader.Context =

@@ -1,25 +1,16 @@
 package pool
 
-import akka.actor.typed.ActorSystem
-import akka.actor.typed.Behavior
-import akka.actor.typed.Scheduler
+import pool.dependencies.{Cfg, Namer, Saver}
+import pool.interface.{PoolMessage, TaskInfo, TaskShortInfo}
+import pool.{PoolState, TaskRunState, WorkerFactory}
+
 import akka.actor.typed.scaladsl.AskPattern._
 import akka.actor.typed.scaladsl.Behaviors
-import akka.http.scaladsl.model.Uri
+import akka.actor.typed.{ActorSystem, Behavior, Scheduler}
 import akka.util.Timeout
-import models.ConversionMessage
-import models.TaskId
-import models.TaskInfo
-import models.TaskShortInfo
-import pool.Config
-import pool.Namer
-import pool.PoolState
-import pool.Saver
-import pool.TaskRunState
-import pool.WorkerFactory
 
-import java.nio.file.Path
 import scala.concurrent.Future
+
 object WorkerPool {
   private sealed trait WorkerResponse
   private object WorkerResponse {
@@ -27,19 +18,21 @@ object WorkerPool {
     object Failed extends WorkerResponse
     final case class Done(totalCount: Long) extends WorkerResponse
   }
-  private sealed trait Message
+  private sealed trait Message[ID, IN, OUT]
   private object Message {
-    final case class Public(message: ConversionMessage) extends Message
-    final case class Private(taskId: TaskId, message: WorkerResponse)
-        extends Message
+    final case class Public[ID, IN, OUT](
+        message: PoolMessage[ID, IN, OUT]
+    ) extends Message[ID, IN, OUT]
+    final case class Private[ID, IN, OUT](taskId: ID, message: WorkerResponse)
+        extends Message[ID, IN, OUT]
   }
 }
 
-class WorkerPool(
-    config: Config,
-    workerCreator: WorkerFactory,
-    saver: Saver,
-    namer: Namer
+class WorkerPool[CFG <: Cfg, ID, IN, OUT, ITEM](
+    config: CFG,
+    workerCreator: WorkerFactory[ID, IN, OUT],
+    saver: Saver[CFG, ID, OUT, ITEM],
+    namer: Namer[ID]
 )(implicit
     scheduler: Scheduler
 ) {
@@ -49,9 +42,9 @@ class WorkerPool(
 
   private val actor = ActorSystem(
     Behaviors
-      .setup[Message] { context =>
+      .setup[Message[ID, IN, OUT]] { context =>
         implicit val as = context.system
-        def createWorker(taskId: TaskId, url: Uri, result: Path) =
+        def createWorker(taskId: ID, url: IN, result: OUT) =
           workerCreator.createWorker(
             taskId,
             url,
@@ -63,46 +56,46 @@ class WorkerPool(
           )
         behavior(PoolState(config.concurrency, createWorker))
       }
-      .transformMessages[ConversionMessage](Message.Public(_)),
-    "ConversionActor"
+      .transformMessages[PoolMessage[ID, IN, OUT]](Message.Public(_)),
+    "PoolActor"
   )
 
-  def createTask(url: Uri): Future[TaskInfo] = {
+  def createTask(url: IN): Future[TaskInfo[ID, OUT]] = {
     val taskId = namer.makeTaskId()
     actor.ask(
-      ConversionMessage.CreateTask(
+      PoolMessage.CreateTask(
         taskId,
         url,
-        config.resultDirectory.resolve(s"${taskId.id}.json"),
+        saver.target(config, taskId),
         _
       )
     )
   }
-  def listTasks: Future[Seq[TaskShortInfo]] =
-    actor.ask(ConversionMessage.ListTasks)
-  def getTask(taskId: TaskId): Future[Option[TaskInfo]] =
-    actor.ask(ConversionMessage.GetTask(taskId, _))
-  def cancelTask(taskId: TaskId): Future[Boolean] =
-    actor.ask(ConversionMessage.CancelTask(taskId, _))
+  def listTasks: Future[Seq[TaskShortInfo[ID]]] =
+    actor.ask(PoolMessage.ListTasks(_))
+  def getTask(taskId: ID): Future[Option[TaskInfo[ID, OUT]]] =
+    actor.ask(PoolMessage.GetTask(taskId, _))
+  def cancelTask(taskId: ID): Future[Boolean] =
+    actor.ask(PoolMessage.CancelTask(taskId, _))
 
   private def behavior(
-      state: PoolState
-  )(implicit timeout: Timeout): Behavior[Message] =
+      state: PoolState[ID, IN, OUT]
+  )(implicit timeout: Timeout): Behavior[Message[ID, IN, OUT]] =
     Behaviors.receive((context, message) =>
       message match {
         case Message.Public(message) =>
           message match {
-            case ConversionMessage.CreateTask(taskId, url, result, replyTo) =>
+            case PoolMessage.CreateTask(taskId, url, result, replyTo) =>
               val (taskInfo, newState) = state.addTask(taskId, url, result)
               replyTo ! taskInfo
               behavior(newState)
-            case ConversionMessage.ListTasks(replyTo) =>
-              replyTo ! state.listTasks
+            case PoolMessage.ListTasks(replyTo) =>
+              replyTo ! state.listTasks()
               Behaviors.same
-            case ConversionMessage.GetTask(taskId, replyTo) =>
+            case PoolMessage.GetTask(taskId, replyTo) =>
               if (!state.getTask(taskId, replyTo ! Some(_))) replyTo ! None
               Behaviors.same
-            case ConversionMessage.CancelTask(taskId, replyTo) =>
+            case PoolMessage.CancelTask(taskId, replyTo) =>
               val (response, newStateOpt) = state.cancelTask(
                 taskId,
                 () =>
@@ -121,13 +114,13 @@ class WorkerPool(
           state.tasks.get(taskId) match {
             case Some(TaskRunState.Running(runningSince, _, result, _)) =>
               implicit val system = context.system
-              val newTaskState = message match {
+              val newTaskState: TaskRunState[IN, OUT] = message match {
                 case WorkerResponse.Cancelled =>
                   saver.unmake(result)
-                  TaskRunState.Cancelled
+                  TaskRunState.Cancelled()
                 case WorkerResponse.Failed =>
                   saver.unmake(result)
-                  TaskRunState.Failed
+                  TaskRunState.Failed()
                 case WorkerResponse.Done(totalCount) =>
                   TaskRunState.Done(
                     runningSince,

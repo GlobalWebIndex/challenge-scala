@@ -1,14 +1,12 @@
-import models.TaskCurrentState
-import models.TaskDetails
-import models.TaskId
-import models.TaskInfo
-import models.TaskShortDetails
-import models.TaskShortInfo
-import models.TaskState
+import models.{TaskDetails, TaskId, TaskShortDetails}
+import pool.interface.{TaskCurrentState, TaskInfo, TaskShortInfo, TaskState}
+
 import play.api.mvc.RequestHeader
 
+import java.nio.file.Path
+
 package object controllers {
-  def taskShortInfoToDetails(info: TaskShortInfo)(implicit
+  def taskShortInfoToDetails(info: TaskShortInfo[TaskId])(implicit
       requestHeader: RequestHeader
   ): (TaskId, TaskShortDetails) = {
     val resultUrl = info.state match {
@@ -26,7 +24,7 @@ package object controllers {
     )
   }
   def taskInfoToDetails(
-      info: TaskInfo
+      info: TaskInfo[TaskId, Path]
   )(implicit requestHeader: RequestHeader): TaskDetails = {
     val lastTime = info.state match {
       case TaskCurrentState.Done(at, _) => at
@@ -45,11 +43,11 @@ package object controllers {
       case _ => None
     }
     val state = info.state match {
-      case TaskCurrentState.Scheduled  => TaskState.SCHEDULED
-      case TaskCurrentState.Running    => TaskState.RUNNING
-      case TaskCurrentState.Done(_, _) => TaskState.DONE
-      case TaskCurrentState.Failed     => TaskState.FAILED
-      case TaskCurrentState.Cancelled  => TaskState.CANCELLED
+      case TaskCurrentState.Scheduled() => TaskState.SCHEDULED
+      case TaskCurrentState.Running()   => TaskState.RUNNING
+      case TaskCurrentState.Done(_, _)  => TaskState.DONE
+      case TaskCurrentState.Failed()    => TaskState.FAILED
+      case TaskCurrentState.Cancelled() => TaskState.CANCELLED
     }
     TaskDetails(info.linesProcessed, avgLinesProcessed, state, resultUrl)
   }

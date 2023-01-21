@@ -1,23 +1,19 @@
 package application
 
 import com.softwaremill.macwire._
-import controllers.Assets
-import controllers.CheckController
-import controllers.CsvToJsonController
-import conversion.FileSaver
-import conversion.HttpConversion
-import conversion.UUIDNamer
-import play.api.Application
-import play.api.ApplicationLoader
-import play.api.BuiltInComponentsFromContext
-import play.api.LoggerConfigurator
-import play.api.routing.Router
-import play.filters.HttpFiltersComponents
-import pool.Config
-import pool.DefaultWorkerFactory
-import pool.WorkerFactory
-import pool.WorkerPool
+import controllers.{Assets, CheckController, CsvToJsonController}
+import conversion.{ConversionConfig, FileSaver, HttpConversion, UUIDNamer}
+import pool.{DefaultWorkerFactory, WorkerPool}
 import router.Routes
+
+import play.api.routing.Router
+import play.api.{
+  Application,
+  ApplicationLoader,
+  BuiltInComponentsFromContext,
+  LoggerConfigurator
+}
+import play.filters.HttpFiltersComponents
 
 class ChallengeLoader extends ApplicationLoader {
   override def load(context: ApplicationLoader.Context): Application = {
@@ -33,13 +29,14 @@ class ChallengeStartup(context: ApplicationLoader.Context)
     with HttpFiltersComponents
     with controllers.AssetsComponents {
 
-  private lazy val conversionConfig: Config = Config.fromConf(configuration)
+  private lazy val conversionConfig: ConversionConfig =
+    ConversionConfig.fromConf(configuration.underlying.getConfig("conversion"))
 
-  private lazy val workerCreator: WorkerFactory =
+  private lazy val workerFactory =
     new DefaultWorkerFactory(HttpConversion, FileSaver)
 
   private lazy val conversionPool =
-    new WorkerPool(conversionConfig, workerCreator, FileSaver, UUIDNamer)
+    new WorkerPool(conversionConfig, workerFactory, FileSaver, UUIDNamer)
 
   private lazy val checkController = new CheckController(controllerComponents)
   private lazy val csvToJsonController = new CsvToJsonController(

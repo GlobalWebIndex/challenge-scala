@@ -1,42 +1,36 @@
 package pool
 
-import akka.actor.typed.ActorSystem
-import akka.http.scaladsl.model.Uri
-import akka.util.Timeout
-import models.TaskCurrentState
-import models.TaskId
-import models.TaskInfo
-import models.TaskShortInfo
-import models.TaskState
-import pool.TaskRunState
-import pool.Worker
+import pool.interface.{TaskCurrentState, TaskInfo, TaskShortInfo, TaskState}
+import pool.{TaskRunState, Worker}
 
-import java.nio.file.Path
+import akka.actor.typed.ActorSystem
+import akka.util.Timeout
+
 object PoolState {
-  final case class QueuedTask(taskId: TaskId, url: Uri, result: Path)
-  def apply(
+  final case class QueuedTask[ID, IN, OUT](taskId: ID, url: IN, result: OUT)
+  def apply[ID, IN, OUT](
       concurrency: Int,
-      createWorker: (TaskId, Uri, Path) => Worker
-  ): PoolState =
+      createWorker: (ID, IN, OUT) => Worker
+  ): PoolState[ID, IN, OUT] =
     PoolState(concurrency, createWorker, 0, Vector.empty, Map.empty)
 }
 
-final case class PoolState(
+final case class PoolState[ID, IN, OUT](
     concurrency: Int,
-    createWorker: (TaskId, Uri, Path) => Worker,
+    createWorker: (ID, IN, OUT) => Worker,
     running: Int,
-    queue: Vector[PoolState.QueuedTask],
-    tasks: Map[TaskId, TaskRunState]
+    queue: Vector[PoolState.QueuedTask[ID, IN, OUT]],
+    tasks: Map[ID, TaskRunState[IN, OUT]]
 ) {
   def addTask(
-      taskId: TaskId,
-      url: Uri,
-      result: Path
-  ): (TaskInfo, PoolState) =
+      taskId: ID,
+      url: IN,
+      result: OUT
+  ): (TaskInfo[ID, OUT], PoolState[ID, IN, OUT]) =
     if (running < concurrency) {
       val time = System.currentTimeMillis
       (
-        TaskInfo(taskId, 0, time, TaskCurrentState.Running),
+        TaskInfo(taskId, 0, time, TaskCurrentState.Running()),
         copy(
           running = running + 1,
           tasks = tasks + (taskId -> TaskRunState.Running(
@@ -49,7 +43,7 @@ final case class PoolState(
       )
     } else {
       (
-        TaskInfo(taskId, 0, 0, TaskCurrentState.Scheduled),
+        TaskInfo(taskId, 0, 0, TaskCurrentState.Scheduled()),
         copy(
           queue = queue :+ PoolState.QueuedTask(taskId, url, result),
           tasks = tasks + (taskId -> TaskRunState.Scheduled(url, result))
@@ -57,13 +51,13 @@ final case class PoolState(
       )
     }
   def getTask(
-      taskId: TaskId,
-      onTaskInfo: TaskInfo => Unit
+      taskId: ID,
+      onTaskInfo: TaskInfo[ID, OUT] => Unit
   ): Boolean = {
     val task = tasks.get(taskId)
     task.foreach {
       case TaskRunState.Scheduled(_, _) =>
-        onTaskInfo(TaskInfo(taskId, 0, 0, TaskCurrentState.Scheduled))
+        onTaskInfo(TaskInfo(taskId, 0, 0, TaskCurrentState.Scheduled()))
       case TaskRunState.Running(runningSince, worker, _, _) =>
         worker.currentCount(count =>
           onTaskInfo(
@@ -71,14 +65,14 @@ final case class PoolState(
               taskId,
               count,
               runningSince,
-              TaskCurrentState.Running
+              TaskCurrentState.Running()
             )
           )
         )
-      case TaskRunState.Cancelled =>
-        onTaskInfo(TaskInfo(taskId, 0, 0, TaskCurrentState.Cancelled))
-      case TaskRunState.Failed =>
-        onTaskInfo(TaskInfo(taskId, 0, 0, TaskCurrentState.Failed))
+      case TaskRunState.Cancelled() =>
+        onTaskInfo(TaskInfo(taskId, 0, 0, TaskCurrentState.Cancelled()))
+      case TaskRunState.Failed() =>
+        onTaskInfo(TaskInfo(taskId, 0, 0, TaskCurrentState.Failed()))
       case TaskRunState.Done(
             runningSince,
             finishedAt,
@@ -96,24 +90,25 @@ final case class PoolState(
     }
     task.isDefined
   }
-  def listTasks: Seq[TaskShortInfo] = tasks.toSeq.map { case (taskId, state) =>
-    state match {
-      case TaskRunState.Scheduled(_, _) =>
-        TaskShortInfo(taskId, TaskState.SCHEDULED)
-      case TaskRunState.Running(_, _, _, _) =>
-        TaskShortInfo(taskId, TaskState.RUNNING)
-      case TaskRunState.Cancelled =>
-        TaskShortInfo(taskId, TaskState.CANCELLED)
-      case TaskRunState.Failed =>
-        TaskShortInfo(taskId, TaskState.FAILED)
-      case TaskRunState.Done(_, finishedAt, _, result) =>
-        TaskShortInfo(taskId, TaskState.DONE)
-    }
+  def listTasks(): Seq[TaskShortInfo[ID]] = tasks.toSeq.map {
+    case (taskId, state) =>
+      state match {
+        case TaskRunState.Scheduled(_, _) =>
+          TaskShortInfo(taskId, TaskState.SCHEDULED)
+        case TaskRunState.Running(_, _, _, _) =>
+          TaskShortInfo(taskId, TaskState.RUNNING)
+        case TaskRunState.Cancelled() =>
+          TaskShortInfo(taskId, TaskState.CANCELLED)
+        case TaskRunState.Failed() =>
+          TaskShortInfo(taskId, TaskState.FAILED)
+        case TaskRunState.Done(_, finishedAt, _, result) =>
+          TaskShortInfo(taskId, TaskState.DONE)
+      }
   }
   def cancelTask(
-      taskId: TaskId,
+      taskId: ID,
       onCancel: () => Unit
-  ): (Boolean, Option[PoolState]) = {
+  ): (Boolean, Option[PoolState[ID, IN, OUT]]) = {
     val task = tasks.get(taskId)
     val newState = task.flatMap {
       case TaskRunState.Running(s, worker, r, cancellationInProgress) =>
@@ -122,7 +117,8 @@ final case class PoolState(
           worker.cancel(onCancel)
           Some(
             copy(tasks =
-              tasks + (taskId -> TaskRunState.Running(s, worker, r, true))
+              tasks + (taskId -> TaskRunState
+                .Running[IN, OUT](s, worker, r, true))
             )
           )
         }
@@ -130,19 +126,19 @@ final case class PoolState(
         Some(
           copy(
             queue = queue.filterNot(_.taskId == taskId),
-            tasks = tasks + (taskId -> TaskRunState.Cancelled)
+            tasks = tasks + (taskId -> TaskRunState.Cancelled[IN, OUT]())
           )
         )
-      case TaskRunState.Cancelled | TaskRunState.Failed |
+      case TaskRunState.Cancelled() | TaskRunState.Failed() |
           TaskRunState.Done(_, _, _, _) =>
         None
     }
     (task.isDefined, newState)
   }
   def pickNext(
-      taskId: TaskId,
-      newTaskState: TaskRunState
-  )(implicit timeout: Timeout, as: ActorSystem[_]): PoolState = {
+      taskId: ID,
+      newTaskState: TaskRunState[IN, OUT]
+  )(implicit timeout: Timeout, as: ActorSystem[_]): PoolState[ID, IN, OUT] = {
     val newTasks = tasks + (taskId -> newTaskState)
     queue.headOption match {
       case None => copy(running = running - 1, tasks = newTasks)

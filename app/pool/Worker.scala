@@ -1,42 +1,35 @@
 package pool
 
-import akka.actor.typed.ActorSystem
-import akka.http.scaladsl.model.Uri
-import akka.stream.OverflowStrategy
-import akka.stream.alpakka.csv.scaladsl.CsvParsing
-import akka.stream.alpakka.csv.scaladsl.CsvToMap
-import akka.stream.scaladsl.Flow
-import akka.stream.scaladsl.Keep
-import akka.stream.scaladsl.Sink
-import akka.stream.scaladsl.Source
-import akka.stream.typed.scaladsl.ActorSource
-import akka.util.ByteString
-import models.TaskId
-import play.api.libs.json.Json
-import pool.Fetch
-import pool.Saver
+import pool.dependencies.{Fetch, Saver}
 
-import java.nio.file.Path
+import akka.actor.typed.ActorSystem
+import akka.stream.OverflowStrategy
+import akka.stream.scaladsl.{Flow, Keep, Sink, Source}
+import akka.stream.typed.scaladsl.ActorSource
+
 trait Worker {
   def cancel(onCancel: () => Unit): Unit
   def currentCount(onCount: Long => Unit): Unit
 }
 
-trait WorkerFactory {
+trait WorkerFactory[ID, IN, OUT] {
   def createWorker(
-      taskId: TaskId,
-      url: Uri,
-      result: Path,
+      taskId: ID,
+      url: IN,
+      result: OUT,
       onCount: Long => Unit,
       onFailure: () => Unit
   )(implicit as: ActorSystem[_]): Worker
 }
 
-class DefaultWorkerFactory(fetch: Fetch, saver: Saver) extends WorkerFactory {
+class DefaultWorkerFactory[CFG, ID, IN, OUT, ITEM](
+    fetch: Fetch[IN, ITEM],
+    saver: Saver[CFG, ID, OUT, ITEM]
+) extends WorkerFactory[ID, IN, OUT] {
   def createWorker(
-      taskId: TaskId,
-      url: Uri,
-      result: Path,
+      taskId: ID,
+      url: IN,
+      result: OUT,
       onCount: Long => Unit,
       onFailure: () => Unit
   )(implicit as: ActorSystem[_]): Worker =
@@ -71,23 +64,14 @@ object WorkerImpl {
   }
 }
 
-class WorkerImpl(
-    source: Source[ByteString, _],
-    result: Sink[ByteString, _],
+class WorkerImpl[ITEM](
+    source: Source[ITEM, _],
+    result: Sink[ITEM, _],
     onDone: Long => Unit,
     onFail: () => Unit
 )(implicit as: ActorSystem[_])
     extends Worker {
   import WorkerImpl._
-
-  private val items =
-    source
-      .via(CsvParsing.lineScanner())
-      .via(CsvToMap.toMap())
-      .map(Json.toJson(_))
-      .map(Json.stringify(_))
-      .intersperse("[", ",\n", "]")
-      .map(ByteString(_))
 
   private val commands = ActorSource.actorRef[Message](
     PartialFunction.empty,
@@ -97,7 +81,7 @@ class WorkerImpl(
   )
   private val counter =
     Flow
-      .fromFunction[ByteString, Message](_ => Message.Line)
+      .fromFunction[ITEM, Message](_ => Message.Line)
       .recover(_ => Message.Failure(onFail))
       .mergeMat(commands, true)(Keep.right)
       .takeWhile({ case Message.Cancel(_) => false; case _ => true }, true)
@@ -107,7 +91,7 @@ class WorkerImpl(
       )
       .to(Sink.ignore)
 
-  private val actor = items.alsoToMat(counter)(Keep.right).to(result).run()
+  private val actor = source.alsoToMat(counter)(Keep.right).to(result).run()
 
   def cancel(onCancel: () => Unit): Unit = actor ! Message.Cancel(onCancel)
   def currentCount(onCount: Long => Unit): Unit = actor ! Message.Count(onCount)
