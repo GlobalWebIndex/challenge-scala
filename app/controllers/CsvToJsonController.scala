@@ -1,5 +1,6 @@
 package controllers
 
+import com.typesafe.config.Config
 import conversion.ConversionConfig
 import models.TaskId
 import pool.WorkerPool
@@ -9,7 +10,6 @@ import akka.NotUsed
 import akka.http.scaladsl.model.Uri
 import akka.stream.scaladsl.Source
 import akka.util.ByteString
-import play.api.Configuration
 import play.api.libs.json.Json
 import play.api.libs.json.Writes.keyMapWrites
 import play.api.mvc.{
@@ -24,7 +24,7 @@ import scala.concurrent.ExecutionContext
 import scala.concurrent.duration.{Duration, FiniteDuration}
 
 class CsvToJsonController(
-    config: Configuration,
+    config: Config,
     controllerComponents: ControllerComponents,
     conversionService: WorkerPool[
       ConversionConfig,
@@ -37,7 +37,7 @@ class CsvToJsonController(
     ec: ExecutionContext
 ) extends AbstractController(controllerComponents) {
   val pollingPeriod: FiniteDuration =
-    Duration(config.get[Long]("csvToJson.pollingPeriodMillis"), "ms")
+    Duration(config.getLong("csvToJson.pollingPeriodMillis"), "ms")
 
   def createTask: Action[Uri] = Action.async(parse.tolerantText.map(Uri(_))) {
     implicit request =>

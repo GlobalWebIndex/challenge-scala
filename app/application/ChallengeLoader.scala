@@ -29,8 +29,9 @@ class ChallengeStartup(context: ApplicationLoader.Context)
     with HttpFiltersComponents
     with controllers.AssetsComponents {
 
+  private lazy val config = configuration.underlying
   private lazy val conversionConfig: ConversionConfig =
-    ConversionConfig.fromConf(configuration.underlying.getConfig("conversion"))
+    ConversionConfig.fromConf(config.getConfig("conversion"))
 
   private lazy val workerFactory =
     new DefaultWorkerFactory(HttpConversion, FileSaver)
@@ -39,11 +40,8 @@ class ChallengeStartup(context: ApplicationLoader.Context)
     new WorkerPool(conversionConfig, workerFactory, FileSaver, UUIDNamer)
 
   private lazy val checkController = new CheckController(controllerComponents)
-  private lazy val csvToJsonController = new CsvToJsonController(
-    configuration,
-    controllerComponents,
-    conversionPool
-  )
+  private lazy val csvToJsonController =
+    new CsvToJsonController(config, controllerComponents, conversionPool)
 
   override def router: Router = {
     lazy val prefix: String = ""
