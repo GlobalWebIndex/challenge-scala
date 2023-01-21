@@ -1,7 +1,10 @@
 package conversion
 
+import akka.actor.typed.ActorSystem
+import akka.actor.typed.Behavior
 import akka.actor.typed.Scheduler
 import akka.actor.typed.scaladsl.AskPattern._
+import akka.actor.typed.scaladsl.Behaviors
 import akka.http.scaladsl.model.Uri
 import akka.util.Timeout
 import models.ConversionMessage
@@ -9,13 +12,8 @@ import models.TaskId
 import models.TaskInfo
 import models.TaskShortInfo
 
-import scala.concurrent.Future
-import akka.actor.typed.Behavior
-import akka.actor.typed.scaladsl.Behaviors
-import java.nio.file.Files
-import akka.actor.typed.ActorRef
-import akka.actor.typed.ActorSystem
 import java.nio.file.Path
+import scala.concurrent.Future
 
 object ConversionService {
   private sealed trait WorkerResponse
@@ -35,6 +33,7 @@ object ConversionService {
 class ConversionService(
     config: ConversionConfig,
     workerCreator: ConversionWorkerFactory,
+    sink: ConversionSink,
     namer: Namer
 )(implicit
     scheduler: Scheduler
@@ -43,11 +42,29 @@ class ConversionService(
 
   implicit val timeout: Timeout = Timeout.durationToTimeout(config.timeout)
 
-  private val conversionActor = create(config.concurrency, workerCreator)
+  private val actor = ActorSystem(
+    Behaviors
+      .setup[Message] { context =>
+        implicit val as = context.system
+        def createWorker(taskId: TaskId, url: Uri, result: Path) =
+          workerCreator.createWorker(
+            taskId,
+            url,
+            result,
+            count =>
+              context.self ! Message
+                .Private(taskId, WorkerResponse.Done(count)),
+            () => context.self ! Message.Private(taskId, WorkerResponse.Failed)
+          )
+        behavior(ConversionState(config.concurrency, createWorker))
+      }
+      .transformMessages[ConversionMessage](Message.Public(_)),
+    "ConversionActor"
+  )
 
   def createTask(url: Uri): Future[TaskInfo] = {
     val taskId = namer.makeTaskId()
-    conversionActor.ask(
+    actor.ask(
       ConversionMessage.CreateTask(
         taskId,
         url,
@@ -57,11 +74,12 @@ class ConversionService(
     )
   }
   def listTasks: Future[Seq[TaskShortInfo]] =
-    conversionActor.ask(ConversionMessage.ListTasks)
+    actor.ask(ConversionMessage.ListTasks)
   def getTask(taskId: TaskId): Future[Option[TaskInfo]] =
-    conversionActor.ask(ConversionMessage.GetTask(taskId, _))
+    actor.ask(ConversionMessage.GetTask(taskId, _))
   def cancelTask(taskId: TaskId): Future[Boolean] =
-    conversionActor.ask(ConversionMessage.CancelTask(taskId, _))
+    actor.ask(ConversionMessage.CancelTask(taskId, _))
+
   private def behavior(
       state: ConversionState
   )(implicit timeout: Timeout): Behavior[Message] =
@@ -100,10 +118,10 @@ class ConversionService(
               implicit val system = context.system
               val newTaskState = message match {
                 case WorkerResponse.Cancelled =>
-                  Files.deleteIfExists(result)
+                  sink.unmake(result)
                   TaskRunState.Cancelled
                 case WorkerResponse.Failed =>
-                  Files.deleteIfExists(result)
+                  sink.unmake(result)
                   TaskRunState.Failed
                 case WorkerResponse.Done(totalCount) =>
                   TaskRunState.Done(
@@ -118,29 +136,4 @@ class ConversionService(
           }
       }
     )
-  def create(
-      concurrency: Int,
-      workerCreator: ConversionWorkerFactory
-  )(implicit timeout: Timeout): ActorRef[ConversionMessage] = {
-    ActorSystem(
-      Behaviors
-        .setup[Message] { context =>
-          implicit val as = context.system
-          def createWorker(taskId: TaskId, url: Uri, result: Path) =
-            workerCreator.createWorker(
-              taskId,
-              url,
-              result,
-              count =>
-                context.self ! Message
-                  .Private(taskId, WorkerResponse.Done(count)),
-              () =>
-                context.self ! Message.Private(taskId, WorkerResponse.Failed)
-            )
-          behavior(ConversionState(concurrency, createWorker))
-        }
-        .transformMessages[ConversionMessage](Message.Public(_)),
-      "ConversionActor"
-    )
-  }
 }
