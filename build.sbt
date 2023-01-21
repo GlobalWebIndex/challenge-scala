@@ -15,17 +15,18 @@ val circeVersion = "0.14.1"
 
 libraryDependencies += "ch.qos.logback" % "logback-classic" % "1.2.11"
 libraryDependencies += "com.lightbend.akka" %% "akka-stream-alpakka-csv" % AlpakkaVersion
-libraryDependencies += "com.typesafe.akka" %% "akka-actor-testkit-typed" % AkkaVersion % Test
 libraryDependencies += "com.typesafe.akka" %% "akka-actor-typed" % AkkaVersion
 libraryDependencies += "com.typesafe.akka" %% "akka-http" % AkkaHttpVersion
-libraryDependencies += "com.typesafe.akka" %% "akka-serialization-jackson" % AkkaVersion
 libraryDependencies += "com.typesafe.akka" %% "akka-slf4j" % AkkaVersion
 libraryDependencies += "com.typesafe.akka" %% "akka-stream-typed" % AkkaVersion
-libraryDependencies += "com.typesafe.akka" %% "akka-stream" % AkkaVersion
 libraryDependencies += "de.heikoseeberger" %% "akka-http-circe" % "1.39.2"
 libraryDependencies += "io.circe" %% "circe-core" % circeVersion
 libraryDependencies += "io.circe" %% "circe-generic" % circeVersion
 libraryDependencies += "io.circe" %% "circe-parser" % circeVersion
+
+libraryDependencies += "com.typesafe.akka" %% "akka-actor-testkit-typed" % AkkaVersion % Test
+libraryDependencies += "com.typesafe.akka" %% "akka-http-testkit" % AkkaHttpVersion % Test
+libraryDependencies += "org.scalatest" %% "scalatest" % "3.2.15" % Test
 
 ThisBuild / scalafixScalaBinaryVersion := "2.13"
 ThisBuild / scalafixDependencies += "com.github.liancheng" %% "organize-imports" % "0.6.0"
