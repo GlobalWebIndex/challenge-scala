@@ -41,8 +41,6 @@ class ChallengeStartup(context: ApplicationLoader.Context)
   private lazy val conversionPool =
     new WorkerPool(conversionConfig, workerCreator, FileSaver, UUIDNamer)
 
-  private lazy val assetsController = wire[Assets]
-
   private lazy val checkController = new CheckController(controllerComponents)
   private lazy val csvToJsonController = new CsvToJsonController(
     configuration,
@@ -52,6 +50,7 @@ class ChallengeStartup(context: ApplicationLoader.Context)
 
   override def router: Router = {
     lazy val prefix: String = ""
+    lazy val assetsController = wire[Assets]
     wire[Routes]
   }
 }
