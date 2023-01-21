@@ -1,7 +1,7 @@
 package pool
 
 import org.slf4j.Logger
-import pool.dependencies.Cfg
+import pool.dependencies.Config
 import pool.dependencies.Namer
 import pool.dependencies.Saver
 import pool.interface.PoolMessage
@@ -31,11 +31,11 @@ object WorkerPool {
   }
 }
 
-class WorkerPool[CFG <: Cfg, ID, IN, OUT, ITEM](
-    config: CFG,
+class WorkerPool[ID, IN, OUT, ITEM](
+    config: Config,
     log: Logger,
     workerCreator: WorkerFactory[ID, IN, OUT],
-    saver: Saver[CFG, ID, OUT, ITEM],
+    saver: Saver[ID, OUT, ITEM],
     namer: Namer[ID],
     actorName: String
 )(implicit
@@ -66,14 +66,7 @@ class WorkerPool[CFG <: Cfg, ID, IN, OUT, ITEM](
 
   def createTask(url: IN): Future[TaskInfo[ID, OUT]] = {
     val taskId = namer.makeTaskId()
-    actor.ask(
-      PoolMessage.CreateTask(
-        taskId,
-        url,
-        saver.target(config, taskId),
-        _
-      )
-    )
+    actor.ask(PoolMessage.CreateTask(taskId, url, saver.target(taskId), _))
   }
   def listTasks: Future[Seq[TaskShortInfo[ID]]] =
     actor.ask(PoolMessage.ListTasks(_))

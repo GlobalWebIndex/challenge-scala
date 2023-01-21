@@ -26,9 +26,9 @@ trait WorkerFactory[ID, IN, OUT] {
   )(implicit as: ActorSystem[_]): Worker
 }
 
-class DefaultWorkerFactory[CFG, ID, IN, OUT, ITEM](
+class DefaultWorkerFactory[ID, IN, OUT, ITEM](
     fetch: Fetch[IN, ITEM],
-    saver: Saver[CFG, ID, OUT, ITEM]
+    saver: Saver[ID, OUT, ITEM]
 ) extends WorkerFactory[ID, IN, OUT] {
   def createWorker(
       taskId: ID,

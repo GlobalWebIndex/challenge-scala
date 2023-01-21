@@ -1,14 +1,14 @@
-import com.typesafe.config.Config
 import com.typesafe.config.ConfigFactory
+import com.typesafe.config.{Config => TSConfig}
 import controllers.CheckController
 import controllers.CsvToJsonController
-import conversion.ConversionConfig
 import conversion.FileSaver
 import conversion.HttpConversion
 import conversion.UUIDNamer
 import models.TaskId
 import pool.DefaultWorkerFactory
 import pool.WorkerPool
+import pool.dependencies.Config
 
 import akka.actor.typed.ActorSystem
 import akka.actor.typed.scaladsl.ActorContext
@@ -19,6 +19,7 @@ import akka.http.scaladsl.server.Directives._
 import akka.http.scaladsl.server.Route
 import akka.http.scaladsl.unmarshalling.FromRequestUnmarshaller
 
+import java.nio.file.Paths
 import scala.io.StdIn
 
 object Main {
@@ -33,16 +34,20 @@ object Main {
   }
 
   private def createRoute(
-      config: Config
+      config: TSConfig
   )(implicit actorContext: ActorContext[_]): Route = {
     implicit val ec = actorContext.executionContext
     val log = actorContext.log
 
-    val saver = new FileSaver(log)
+    val saver =
+      new FileSaver(
+        log,
+        Paths.get(config.getString("csvToJson.resultDirectory"))
+      )
     val workerFactory = new DefaultWorkerFactory(HttpConversion, saver)
     val conversionPool =
       new WorkerPool(
-        ConversionConfig.fromConf(config.getConfig("conversion")),
+        Config.fromConf(config.getConfig("conversion")),
         log,
         workerFactory,
         saver,

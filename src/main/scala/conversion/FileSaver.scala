@@ -14,8 +14,8 @@ import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
 
-class FileSaver(log: Logger)
-    extends Saver[ConversionConfig, TaskId, Path, ByteString] {
+class FileSaver(log: Logger, resultDirectory: Path)
+    extends Saver[TaskId, Path, ByteString] {
   def make(file: Path): Sink[ByteString, _] =
     Flow[ByteString]
       .map(ByteString("  ").concat(_))
@@ -28,6 +28,6 @@ class FileSaver(log: Logger)
       } catch {
         case e: IOException => log.error(s"Error deleting the file $file: $e")
       }
-  def target(config: ConversionConfig, taskId: TaskId): Path =
-    config.resultDirectory.resolve(s"${taskId.id}.json")
+  def target(taskId: TaskId): Path =
+    resultDirectory.resolve(s"${taskId.id}.json")
 }

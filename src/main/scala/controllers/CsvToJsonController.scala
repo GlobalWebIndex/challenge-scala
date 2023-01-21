@@ -1,7 +1,6 @@
 package controllers
 
 import com.typesafe.config.Config
-import conversion.ConversionConfig
 import de.heikoseeberger.akkahttpcirce.FailFastCirceSupport
 import io.circe.Printer
 import io.circe.syntax._
@@ -35,7 +34,7 @@ import scala.concurrent.duration.FiniteDuration
 class CsvToJsonController(
     config: Config,
     log: Logger,
-    workerPool: WorkerPool[ConversionConfig, TaskId, Uri, Path, ByteString]
+    workerPool: WorkerPool[TaskId, Uri, Path, ByteString]
 ) extends FailFastCirceSupport {
   private implicit val printer = Printer(dropNullValues = true, indent = "")
 
