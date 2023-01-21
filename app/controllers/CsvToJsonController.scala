@@ -3,7 +3,6 @@ package controllers
 import akka.NotUsed
 import akka.http.scaladsl.model.Uri
 import akka.stream.scaladsl.Source
-import conversion.ConversionService
 import models.TaskCurrentState
 import models.TaskId
 import models.TaskInfo
@@ -14,6 +13,7 @@ import play.api.mvc.AbstractController
 import play.api.mvc.Action
 import play.api.mvc.ControllerComponents
 import play.api.mvc.RequestHeader
+import pool.WorkerPool
 
 import scala.concurrent.ExecutionContext
 import scala.concurrent.duration.Duration
@@ -22,7 +22,7 @@ import scala.concurrent.duration.FiniteDuration
 class CsvToJsonController(
     config: Configuration,
     controllerComponents: ControllerComponents,
-    conversionService: ConversionService
+    conversionService: WorkerPool
 )(implicit
     ec: ExecutionContext
 ) extends AbstractController(controllerComponents) {

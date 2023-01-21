@@ -8,11 +8,8 @@ import akka.http.scaladsl.model.MediaTypes
 import akka.http.scaladsl.model.Uri
 import akka.stream.scaladsl.Source
 import akka.util.ByteString
-
-trait ConversionSource {
-  def make(url: Uri)(implicit as: ActorSystem[_]): Source[ByteString, _]
-}
-object HttpConversionSource extends ConversionSource {
+import pool.Fetch
+object HttpConversion extends Fetch {
   def make(url: Uri)(implicit as: ActorSystem[_]): Source[ByteString, _] =
     Source
       .futureSource(

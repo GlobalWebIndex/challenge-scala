@@ -1,4 +1,4 @@
-package conversion
+package pool
 
 import akka.actor.typed.ActorSystem
 import akka.http.scaladsl.model.Uri
@@ -8,30 +8,31 @@ import models.TaskId
 import models.TaskInfo
 import models.TaskShortInfo
 import models.TaskState
+import pool.TaskRunState
+import pool.Worker
 
 import java.nio.file.Path
-
-object ConversionState {
+object PoolState {
   final case class QueuedTask(taskId: TaskId, url: Uri, result: Path)
   def apply(
       concurrency: Int,
-      createWorker: (TaskId, Uri, Path) => ConversionWorker
-  ): ConversionState =
-    ConversionState(concurrency, createWorker, 0, Vector.empty, Map.empty)
+      createWorker: (TaskId, Uri, Path) => Worker
+  ): PoolState =
+    PoolState(concurrency, createWorker, 0, Vector.empty, Map.empty)
 }
 
-final case class ConversionState(
+final case class PoolState(
     concurrency: Int,
-    createWorker: (TaskId, Uri, Path) => ConversionWorker,
+    createWorker: (TaskId, Uri, Path) => Worker,
     running: Int,
-    queue: Vector[ConversionState.QueuedTask],
+    queue: Vector[PoolState.QueuedTask],
     tasks: Map[TaskId, TaskRunState]
 ) {
   def addTask(
       taskId: TaskId,
       url: Uri,
       result: Path
-  ): (TaskInfo, ConversionState) =
+  ): (TaskInfo, PoolState) =
     if (running < concurrency) {
       val time = System.currentTimeMillis
       (
@@ -50,7 +51,7 @@ final case class ConversionState(
       (
         TaskInfo(taskId, 0, 0, TaskCurrentState.Scheduled),
         copy(
-          queue = queue :+ ConversionState.QueuedTask(taskId, url, result),
+          queue = queue :+ PoolState.QueuedTask(taskId, url, result),
           tasks = tasks + (taskId -> TaskRunState.Scheduled(url, result))
         )
       )
@@ -112,7 +113,7 @@ final case class ConversionState(
   def cancelTask(
       taskId: TaskId,
       onCancel: () => Unit
-  ): (Boolean, Option[ConversionState]) = {
+  ): (Boolean, Option[PoolState]) = {
     val task = tasks.get(taskId)
     val newState = task.flatMap {
       case TaskRunState.Running(s, worker, r, cancellationInProgress) =>
@@ -141,7 +142,7 @@ final case class ConversionState(
   def pickNext(
       taskId: TaskId,
       newTaskState: TaskRunState
-  )(implicit timeout: Timeout, as: ActorSystem[_]): ConversionState = {
+  )(implicit timeout: Timeout, as: ActorSystem[_]): PoolState = {
     val newTasks = tasks + (taskId -> newTaskState)
     queue.headOption match {
       case None => copy(running = running - 1, tasks = newTasks)

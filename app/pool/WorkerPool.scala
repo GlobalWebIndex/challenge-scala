@@ -1,4 +1,4 @@
-package conversion
+package pool
 
 import akka.actor.typed.ActorSystem
 import akka.actor.typed.Behavior
@@ -11,11 +11,16 @@ import models.ConversionMessage
 import models.TaskId
 import models.TaskInfo
 import models.TaskShortInfo
+import pool.Config
+import pool.Namer
+import pool.PoolState
+import pool.Saver
+import pool.TaskRunState
+import pool.WorkerFactory
 
 import java.nio.file.Path
 import scala.concurrent.Future
-
-object ConversionService {
+object WorkerPool {
   private sealed trait WorkerResponse
   private object WorkerResponse {
     object Cancelled extends WorkerResponse
@@ -30,15 +35,15 @@ object ConversionService {
   }
 }
 
-class ConversionService(
-    config: ConversionConfig,
-    workerCreator: ConversionWorkerFactory,
-    sink: ConversionSink,
+class WorkerPool(
+    config: Config,
+    workerCreator: WorkerFactory,
+    saver: Saver,
     namer: Namer
 )(implicit
     scheduler: Scheduler
 ) {
-  import ConversionService._
+  import WorkerPool._
 
   implicit val timeout: Timeout = Timeout.durationToTimeout(config.timeout)
 
@@ -56,7 +61,7 @@ class ConversionService(
                 .Private(taskId, WorkerResponse.Done(count)),
             () => context.self ! Message.Private(taskId, WorkerResponse.Failed)
           )
-        behavior(ConversionState(config.concurrency, createWorker))
+        behavior(PoolState(config.concurrency, createWorker))
       }
       .transformMessages[ConversionMessage](Message.Public(_)),
     "ConversionActor"
@@ -81,7 +86,7 @@ class ConversionService(
     actor.ask(ConversionMessage.CancelTask(taskId, _))
 
   private def behavior(
-      state: ConversionState
+      state: PoolState
   )(implicit timeout: Timeout): Behavior[Message] =
     Behaviors.receive((context, message) =>
       message match {
@@ -118,10 +123,10 @@ class ConversionService(
               implicit val system = context.system
               val newTaskState = message match {
                 case WorkerResponse.Cancelled =>
-                  sink.unmake(result)
+                  saver.unmake(result)
                   TaskRunState.Cancelled
                 case WorkerResponse.Failed =>
-                  sink.unmake(result)
+                  saver.unmake(result)
                   TaskRunState.Failed
                 case WorkerResponse.Done(totalCount) =>
                   TaskRunState.Done(

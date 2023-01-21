@@ -1,4 +1,4 @@
-package conversion
+package pool
 
 import play.api.Configuration
 
@@ -7,14 +7,14 @@ import java.nio.file.Paths
 import scala.concurrent.duration.Duration
 import scala.concurrent.duration.FiniteDuration
 
-final case class ConversionConfig(
+final case class Config(
     concurrency: Int,
     timeout: FiniteDuration,
     resultDirectory: Path
 )
-object ConversionConfig {
-  def fromConf(config: Configuration): ConversionConfig =
-    ConversionConfig(
+object Config {
+  def fromConf(config: Configuration): Config =
+    Config(
       concurrency = config.get[Int]("conversion.concurrency"),
       timeout = Duration(config.get[Long]("conversion.timeout"), "ms"),
       resultDirectory =

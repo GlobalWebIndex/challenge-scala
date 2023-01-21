@@ -4,11 +4,8 @@ import com.softwaremill.macwire._
 import controllers.Assets
 import controllers.CheckController
 import controllers.CsvToJsonController
-import conversion.ConversionConfig
-import conversion.ConversionService
-import conversion.DefaultConversionWorkerCreator
-import conversion.FileConversionSink
-import conversion.HttpConversionSource
+import conversion.FileSaver
+import conversion.HttpConversion
 import conversion.UUIDNamer
 import play.api.Application
 import play.api.ApplicationLoader
@@ -16,6 +13,9 @@ import play.api.BuiltInComponentsFromContext
 import play.api.LoggerConfigurator
 import play.api.routing.Router
 import play.filters.HttpFiltersComponents
+import pool.Config
+import pool.DefaultWorkerFactory
+import pool.WorkerPool
 import router.Routes
 
 class ChallengeLoader extends ApplicationLoader {
@@ -32,15 +32,15 @@ class ChallengeStartup(context: ApplicationLoader.Context)
     with HttpFiltersComponents
     with controllers.AssetsComponents {
 
-  private lazy val conversionConfig = wireWith(ConversionConfig.fromConf _)
+  private lazy val conversionConfig = wireWith(Config.fromConf _)
 
-  private lazy val conversionSource = HttpConversionSource
-  private lazy val conversionSink = FileConversionSink
+  private lazy val conversionSource = HttpConversion
+  private lazy val conversionSink = FileSaver
   private lazy val namer = UUIDNamer
 
-  private lazy val workerCreator = wire[DefaultConversionWorkerCreator]
+  private lazy val workerCreator = wire[DefaultWorkerFactory]
 
-  private lazy val conversionService = wire[ConversionService]
+  private lazy val conversionService = wire[WorkerPool]
 
   private lazy val assetsController = wire[Assets]
 

@@ -1,4 +1,4 @@
-package conversion
+package pool
 
 import akka.actor.typed.ActorSystem
 import akka.http.scaladsl.model.Uri
@@ -13,36 +13,34 @@ import akka.stream.typed.scaladsl.ActorSource
 import akka.util.ByteString
 import models.TaskId
 import play.api.libs.json.Json
+import pool.Fetch
+import pool.Saver
 
 import java.nio.file.Path
-
-trait ConversionWorker {
+trait Worker {
   def cancel(onCancel: () => Unit): Unit
   def currentCount(onCount: Long => Unit): Unit
 }
 
-trait ConversionWorkerFactory {
+trait WorkerFactory {
   def createWorker(
       taskId: TaskId,
       url: Uri,
       result: Path,
       onCount: Long => Unit,
       onFailure: () => Unit
-  )(implicit as: ActorSystem[_]): ConversionWorker
+  )(implicit as: ActorSystem[_]): Worker
 }
 
-class DefaultConversionWorkerCreator(
-    source: ConversionSource,
-    sink: ConversionSink
-) extends ConversionWorkerFactory {
+class DefaultWorkerFactory(source: Fetch, sink: Saver) extends WorkerFactory {
   def createWorker(
       taskId: TaskId,
       url: Uri,
       result: Path,
       onCount: Long => Unit,
       onFailure: () => Unit
-  )(implicit as: ActorSystem[_]): ConversionWorker =
-    new ConversionWorkerImpl(
+  )(implicit as: ActorSystem[_]): Worker =
+    new WorkerImpl(
       source.make(url),
       sink.make(result),
       onCount,
@@ -50,7 +48,7 @@ class DefaultConversionWorkerCreator(
     )
 }
 
-object ConversionWorkerImpl {
+object WorkerImpl {
   private sealed trait Message
   private object Message {
     object Line extends Message
@@ -73,14 +71,14 @@ object ConversionWorkerImpl {
   }
 }
 
-class ConversionWorkerImpl(
+class WorkerImpl(
     source: Source[ByteString, _],
     result: Sink[ByteString, _],
     onDone: Long => Unit,
     onFail: () => Unit
 )(implicit as: ActorSystem[_])
-    extends ConversionWorker {
-  import ConversionWorkerImpl._
+    extends Worker {
+  import WorkerImpl._
 
   private val items =
     source
