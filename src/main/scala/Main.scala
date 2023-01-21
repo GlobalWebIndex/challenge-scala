@@ -18,6 +18,7 @@ import akka.http.scaladsl.server.Directives._
 import akka.http.scaladsl.server.Route
 import akka.http.scaladsl.unmarshalling.FromRequestUnmarshaller
 import scala.io.StdIn
+import com.typesafe.config.Config
 
 object Main {
 
@@ -30,11 +31,11 @@ object Main {
     else link
   }
 
-  private def createRoute(implicit actorContext: ActorContext[_]): Route = {
+  private def createRoute(
+      config: Config
+  )(implicit actorContext: ActorContext[_]): Route = {
     implicit val ec = actorContext.executionContext
     val log = actorContext.log
-
-    val config = ConfigFactory.load()
 
     val saver = new FileSaver(log)
     val workerFactory = new DefaultWorkerFactory(HttpConversion, saver)
@@ -75,14 +76,17 @@ object Main {
   }
 
   def main(args: Array[String]): Unit = {
+    val config = ConfigFactory.load()
+    val host = config.getString("csvToJson.host")
+    val port = config.getInt("csvToJson.port")
     val server = ActorSystem(
       Behaviors.setup[Option[Http.ServerBinding]] { ctx =>
         implicit val system = ctx.system
         implicit val ec = ctx.executionContext
         ctx.pipeToSelf(
           Http()
-            .newServerAt("localhost", 9000)
-            .bind(createRoute(ctx))
+            .newServerAt(host, port)
+            .bind(createRoute(config)(ctx))
         )(_.toOption)
         Behaviors.receiveMessage {
           case None => Behaviors.same
