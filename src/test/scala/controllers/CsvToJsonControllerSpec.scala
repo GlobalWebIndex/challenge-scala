@@ -40,11 +40,11 @@ class CsvToJsonControllerSpec
   def pool: WorkerPool[TaskId, Uri, Path] = new WorkerPool[TaskId, Uri, Path] {
     val startTime = System.currentTimeMillis
     var getTaskCallCount = 0
-    override def createTask(url: Uri): Future[TaskInfo[TaskId, Path]] =
+    def createTask(url: Uri): Future[TaskInfo[TaskId, Path]] =
       Future.successful(
         TaskInfo(TaskId("CreatedTaskId"), 0, 0, TaskCurrentState.Scheduled())
       )
-    override def listTasks: Future[Seq[TaskShortInfo[TaskId]]] =
+    def listTasks: Future[Seq[TaskShortInfo[TaskId]]] =
       Future.successful(
         List(
           TaskShortInfo(TaskId("TaskA"), TaskState.RUNNING),
@@ -53,7 +53,7 @@ class CsvToJsonControllerSpec
           TaskShortInfo(TaskId("TaskD"), TaskState.DONE)
         )
       )
-    override def getTask(
+    def getTask(
         taskId: TaskId
     ): Future[Option[TaskInfo[TaskId, Path]]] = if (
       List("TaskA", "TaskB", "TaskC", "TaskD").contains(taskId.id)
@@ -82,7 +82,7 @@ class CsvToJsonControllerSpec
         )
       )
     } else Future.successful(None)
-    override def cancelTask(taskId: TaskId): Future[Boolean] =
+    def cancelTask(taskId: TaskId): Future[Boolean] =
       Future.successful(
         List("TaskA", "TaskB", "TaskC", "TaskD").contains(taskId.id)
       )
@@ -128,7 +128,7 @@ class CsvToJsonControllerSpec
                 j("result").flatMap(_.as[String].toOption)
               )
             )
-            should contain theSameElementsInOrderAs List(
+            shouldBe List(
               (Some(1), Some("RUNNING"), None),
               (Some(2), Some("RUNNING"), None),
               (Some(3), Some("DONE"), Some("TaskA"))

@@ -21,7 +21,7 @@ trait WorkerFactory[ID, IN, OUT] {
       taskId: ID,
       url: IN,
       result: OUT,
-      onCount: Long => Unit,
+      onDone: Long => Unit,
       onFailure: Long => Unit
   )(implicit as: ActorSystem[_]): Worker
 }
@@ -34,13 +34,13 @@ object WorkerFactory {
         taskId: ID,
         url: IN,
         result: OUT,
-        onCount: Long => Unit,
+        onDone: Long => Unit,
         onFailure: Long => Unit
     )(implicit as: ActorSystem[_]): Worker =
       new WorkerImpl(
         fetch.make(url),
         saver.make(result),
-        onCount,
+        onDone,
         onFailure
       )
   }
