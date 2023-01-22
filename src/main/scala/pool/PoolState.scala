@@ -30,7 +30,7 @@ final case class PoolState[ID, IN, OUT](
       url: IN,
       result: OUT
   ): (TaskInfo[ID, OUT], PoolState[ID, IN, OUT]) =
-    if (running < concurrency) {
+    if (running < concurrency || concurrency == 0) {
       val time = System.currentTimeMillis
       (
         TaskInfo(taskId, 0, time, TaskCurrentState.Running()),
