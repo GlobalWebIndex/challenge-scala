@@ -21,7 +21,7 @@ trait WorkerPool[ID, IN, OUT] {
   def createTask(url: IN): Future[TaskInfo[ID, OUT]]
   def listTasks: Future[Seq[TaskShortInfo[ID]]]
   def getTask(taskId: ID): Future[Option[TaskInfo[ID, OUT]]]
-  def cancelTask(taskId: ID): Future[Boolean]
+  def cancelTask(taskId: ID): Future[Option[Long]]
 }
 
 object WorkerPool {
@@ -30,11 +30,13 @@ object WorkerPool {
     final case class Public[ID, IN, OUT](
         message: PoolMessage[ID, IN, OUT]
     ) extends Message[ID, IN, OUT]
-    final case class Private[ID, IN, OUT](
+    final case class TaskFinished[ID, IN, OUT](
         taskId: ID,
         totalCount: Long,
         message: TaskFinishReason
     ) extends Message[ID, IN, OUT]
+    final case class TaskCounted[ID, IN, OUT](taskId: ID, count: Long)
+        extends Message[ID, IN, OUT]
   }
 
   def apply[ID, IN, OUT, ITEM](
@@ -52,18 +54,15 @@ object WorkerPool {
       private val actor = ctx.spawn(
         Behaviors
           .setup[Message[ID, IN, OUT]] { context =>
-            def createWorker(taskId: ID, url: IN, result: OUT) =
-              workerFactory.createWorker(
-                taskId,
-                url,
-                result,
-                context.self ! Message
-                  .Private(taskId, _, TaskFinishReason.Done),
-                context.self ! Message
-                  .Private(taskId, _, TaskFinishReason.Failed)
-              )
             log.info(s"Worker pool $actorName created")
-            behavior(PoolState(config.concurrency, createWorker))
+            behavior(
+              PoolState[ID, IN, OUT](
+                config.concurrency,
+                workerFactory,
+                context.self ! Message.TaskFinished(_, _, _),
+                context.self ! Message.TaskCounted(_, _)
+              )
+            )
           }
           .transformMessages[PoolMessage[ID, IN, OUT]](Message.Public(_)),
         actorName
@@ -77,7 +76,7 @@ object WorkerPool {
         actor.ask(PoolMessage.ListTasks(_))
       def getTask(taskId: ID): Future[Option[TaskInfo[ID, OUT]]] =
         actor.ask(PoolMessage.GetTask(taskId, _))
-      def cancelTask(taskId: ID): Future[Boolean] =
+      def cancelTask(taskId: ID): Future[Option[Long]] =
         actor.ask(PoolMessage.CancelTask(taskId, _))
 
       private def behavior(
@@ -95,44 +94,39 @@ object WorkerPool {
                   replyTo ! state.listTasks()
                   Behaviors.same
                 case PoolMessage.GetTask(taskId, replyTo) =>
-                  if (!state.getTask(taskId, replyTo ! Some(_))) replyTo ! None
-                  Behaviors.same
+                  val (response, newStateOpt) =
+                    state.getTask(taskId, replyTo ! Some(_))
+                  if (!response) replyTo ! None
+                  newStateOpt match {
+                    case None           => Behaviors.same
+                    case Some(newState) => behavior(newState)
+                  }
                 case PoolMessage.CancelTask(taskId, replyTo) =>
                   val (response, newStateOpt) = state.cancelTask(
                     taskId,
-                    context.self ! Message.Private(
-                      taskId,
-                      _,
-                      TaskFinishReason.Cancelled
-                    ),
-                    () => replyTo ! true
+                    replyTo ! Some(_)
                   )
-                  if (!response) replyTo ! false
+                  if (!response) replyTo ! None
                   newStateOpt match {
                     case None           => Behaviors.same
                     case Some(newState) => behavior(newState)
                   }
               }
-            case Message.Private(taskId, totalCount, reason) =>
+            case Message.TaskFinished(taskId, totalCount, reason) =>
               log.debug(
                 s"Task $taskId is over — $totalCount items processed, final result: ${reason.getClass().getSimpleName()}"
               )
-              state.tasks.get(taskId) match {
-                case Some(
-                      TaskRunState
-                        .Running(runningSince, _, result, cancellationRequested)
-                    ) =>
+              state.finishTask(taskId, totalCount, reason) match {
+                case None => Behaviors.same
+                case Some((result, newState)) =>
                   saver.unmake(result, reason)
-                  val newTaskState = TaskRunState.Finished[IN, OUT](
-                    runningSince,
-                    System.currentTimeMillis,
-                    totalCount,
-                    result,
-                    reason
-                  )
-                  cancellationRequested.foreach(_._2())
-                  behavior(state.pickNext(taskId, newTaskState))
-                case _ => Behaviors.same
+                  behavior(newState)
+              }
+            case Message.TaskCounted(taskId, count) =>
+              log.debug(s"Task $taskId has processed $count items")
+              state.taskCounted(taskId, count) match {
+                case None           => Behaviors.same
+                case Some(newState) => behavior(state)
               }
           }
         )

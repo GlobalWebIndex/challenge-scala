@@ -82,9 +82,11 @@ class CsvToJsonControllerSpec
         )
       )
     } else Future.successful(None)
-    def cancelTask(taskId: TaskId): Future[Boolean] =
+    def cancelTask(taskId: TaskId): Future[Option[Long]] =
       Future.successful(
-        List("TaskA", "TaskB", "TaskC", "TaskD").contains(taskId.id)
+        Some(0L).filter(_ =>
+          List("TaskA", "TaskB", "TaskC", "TaskD").contains(taskId.id)
+        )
       )
   }
 

@@ -77,7 +77,7 @@ class CsvToJsonController(
   def cancelTask(taskId: TaskId)(implicit ec: ExecutionContext): Route = {
     log.debug(s"Cancelling the task $taskId")
     onSuccess(workerPool.cancelTask(taskId))(success =>
-      if (success) complete(HttpEntity("Task cancelled"))
+      if (success.isDefined) complete(HttpEntity("Task cancelled"))
       else {
         log.info(s"Task $taskId doesn't exist and can't be cancelled")
         complete(StatusCodes.NotFound, HttpEntity("Task not found"))

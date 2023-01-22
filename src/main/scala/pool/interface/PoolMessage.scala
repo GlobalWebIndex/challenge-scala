@@ -19,6 +19,6 @@ object PoolMessage {
   ) extends PoolMessage[ID, IN, OUT]
   final case class CancelTask[ID, IN, OUT](
       taskId: ID,
-      replyTo: ActorRef[Boolean]
+      replyTo: ActorRef[Option[Long]]
   ) extends PoolMessage[ID, IN, OUT]
 }

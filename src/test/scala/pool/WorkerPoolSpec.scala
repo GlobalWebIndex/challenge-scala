@@ -188,7 +188,7 @@ class WorkerPoolSpec
         details <- pool.getTask(task.taskId)
       } yield (cancelled, details)
       whenReady(creatingFuture) { case (cancelled, details) =>
-        cancelled shouldBe true
+        cancelled shouldBe defined
         (for {
           d <- details
           finished <- d.state match {

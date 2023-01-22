@@ -13,35 +13,60 @@ object PoolState {
   final case class QueuedTask[ID, IN, OUT](taskId: ID, url: IN, result: OUT)
   def apply[ID, IN, OUT](
       concurrency: Int,
-      createWorker: (ID, IN, OUT) => Worker
+      workerFactory: WorkerFactory[ID, IN, OUT],
+      reportFinish: (ID, Long, TaskFinishReason) => Unit,
+      reportCount: (ID, Long) => Unit
   ): PoolState[ID, IN, OUT] =
-    PoolState(concurrency, createWorker, 0, Vector.empty, Map.empty)
+    PoolState(
+      concurrency,
+      workerFactory,
+      reportFinish,
+      reportCount,
+      0,
+      Vector.empty,
+      Map.empty
+    )
 }
 
 final case class PoolState[ID, IN, OUT](
     concurrency: Int,
-    createWorker: (ID, IN, OUT) => Worker,
+    workerFactory: WorkerFactory[ID, IN, OUT],
+    reportFinish: (ID, Long, TaskFinishReason) => Unit,
+    reportCount: (ID, Long) => Unit,
     running: Int,
     queue: Vector[PoolState.QueuedTask[ID, IN, OUT]],
     tasks: Map[ID, TaskRunState[IN, OUT]]
 ) {
+  private def createWorker(
+      taskId: ID,
+      runningSince: Long,
+      url: IN,
+      result: OUT
+  )(implicit as: ActorSystem[_]) =
+    (taskId -> TaskRunState.Running[IN, OUT](
+      runningSince,
+      workerFactory.createWorker(
+        taskId,
+        url,
+        result,
+        reportFinish(taskId, _, TaskFinishReason.Done),
+        reportFinish(taskId, _, TaskFinishReason.Failed)
+      ),
+      result,
+      Vector.empty
+    ))
   def addTask(
       taskId: ID,
       url: IN,
       result: OUT
-  ): (TaskInfo[ID, OUT], PoolState[ID, IN, OUT]) =
+  )(implicit as: ActorSystem[_]): (TaskInfo[ID, OUT], PoolState[ID, IN, OUT]) =
     if (running < concurrency || concurrency == 0) {
       val time = System.currentTimeMillis
       (
         TaskInfo(taskId, 0, time, TaskCurrentState.Running()),
         copy(
           running = running + 1,
-          tasks = tasks + (taskId -> TaskRunState.Running(
-            time,
-            createWorker(taskId, url, result),
-            result,
-            None
-          ))
+          tasks = tasks + createWorker(taskId, time, url, result)
         )
       )
     } else {
@@ -56,43 +81,27 @@ final case class PoolState[ID, IN, OUT](
   def getTask(
       taskId: ID,
       onTaskInfo: TaskInfo[ID, OUT] => Unit
-  ): Boolean = {
+  ): (Boolean, Option[PoolState[ID, IN, OUT]]) = {
     val task = tasks.get(taskId)
-    task.foreach {
+    val newState = task.flatMap {
       case TaskRunState.Scheduled(_, _) =>
         onTaskInfo(TaskInfo(taskId, 0, 0, TaskCurrentState.Scheduled()))
-      case TaskRunState.Running(
-            runningSince,
-            worker,
-            result,
-            cancellationRequested
-          ) =>
-        cancellationRequested match {
-          case None =>
-            worker.currentCount(count =>
-              onTaskInfo(
-                TaskInfo(
-                  taskId,
-                  count,
-                  runningSince,
-                  TaskCurrentState.Running()
-                )
-              )
-            )
-          case Some((at, _)) =>
+        None
+      case r @ TaskRunState.Running(_, _, _, _) =>
+        r.worker.currentCount(reportCount(taskId, _))
+        val newTaskState = r.copy[IN, OUT](countingRequests =
+          r.countingRequests :+ (count =>
             onTaskInfo(
               TaskInfo(
                 taskId,
-                0,
-                runningSince,
-                TaskCurrentState.Finished(
-                  at,
-                  result,
-                  TaskFinishReason.Cancelled
-                )
+                count,
+                r.runningSince,
+                TaskCurrentState.Running()
               )
             )
-        }
+          )
+        )
+        Some(copy(tasks = tasks + (taskId -> newTaskState)))
       case TaskRunState.Finished(
             runningSince,
             finishedAt,
@@ -108,8 +117,9 @@ final case class PoolState[ID, IN, OUT](
             TaskCurrentState.Finished(finishedAt, result, reason)
           )
         )
+        None
     }
-    task.isDefined
+    (task.isDefined, newState)
   }
   def listTasks(): Seq[TaskShortInfo[ID]] = tasks.toSeq.map {
     case (taskId, state) =>
@@ -131,29 +141,21 @@ final case class PoolState[ID, IN, OUT](
   }
   def cancelTask(
       taskId: ID,
-      onCancel: Long => Unit,
-      reply: () => Unit
+      reply: Long => Unit
   ): (Boolean, Option[PoolState[ID, IN, OUT]]) = {
     val task = tasks.get(taskId)
     val newState = task.flatMap {
-      case TaskRunState.Running(s, worker, r, cancellationInProgress) =>
-        if (cancellationInProgress.isDefined) None
-        else {
-          worker.cancel(onCancel)
-          Some(
-            copy(tasks =
-              tasks + (taskId -> TaskRunState
-                .Running[IN, OUT](
-                  s,
-                  worker,
-                  r,
-                  Some((System.currentTimeMillis, reply))
-                ))
-            )
+      case r @ TaskRunState.Running(_, _, _, _) =>
+        r.worker.cancel(reportFinish(taskId, _, TaskFinishReason.Cancelled))
+        Some(
+          copy(tasks =
+            tasks + (taskId -> r.copy[IN, OUT](
+              countingRequests = r.countingRequests :+ reply
+            ))
           )
-        }
+        )
       case TaskRunState.Scheduled(_, result) =>
-        reply()
+        reply(0)
         Some(
           copy(
             queue = queue.filterNot(_.taskId == taskId),
@@ -161,29 +163,65 @@ final case class PoolState[ID, IN, OUT](
               .Finished[IN, OUT](0, 0, 0, result, TaskFinishReason.Cancelled))
           )
         )
-      case TaskRunState.Finished(_, _, _, _, _) =>
-        reply()
+      case TaskRunState.Finished(_, _, linesProcessed, _, _) =>
+        reply(linesProcessed)
         None
     }
     (task.isDefined, newState)
   }
-  def pickNext(
+  def finishTask(
       taskId: ID,
-      newTaskState: TaskRunState[IN, OUT]
-  )(implicit timeout: Timeout, as: ActorSystem[_]): PoolState[ID, IN, OUT] = {
-    val newTasks = tasks + (taskId -> newTaskState)
-    queue.headOption match {
-      case None => copy(running = running - 1, tasks = newTasks)
-      case Some(task) =>
-        copy(
-          queue = queue.drop(1),
-          tasks = newTasks + (task.taskId -> TaskRunState.Running(
-            System.currentTimeMillis,
-            createWorker(task.taskId, task.url, task.result),
-            task.result,
-            None
-          ))
+      totalCount: Long,
+      reason: TaskFinishReason
+  )(implicit
+      timeout: Timeout,
+      as: ActorSystem[_]
+  ): Option[(OUT, PoolState[ID, IN, OUT])] =
+    tasks.get(taskId) match {
+      case Some(
+            TaskRunState
+              .Running(
+                runningSince,
+                _,
+                result,
+                countingRequests
+              )
+          ) =>
+        val newTaskState = TaskRunState.Finished[IN, OUT](
+          runningSince,
+          System.currentTimeMillis,
+          totalCount,
+          result,
+          reason
         )
+        countingRequests.foreach(_(totalCount))
+        val newTasks = tasks + (taskId -> newTaskState)
+        val newState = queue.headOption match {
+          case None => copy(running = running - 1, tasks = newTasks)
+          case Some(task) =>
+            copy(
+              queue = queue.drop(1),
+              tasks = newTasks + createWorker(
+                task.taskId,
+                System.currentTimeMillis,
+                task.url,
+                task.result
+              )
+            )
+        }
+        Some((result, newState))
+      case _ => None
     }
-  }
+  def taskCounted(taskId: ID, count: Long): Option[PoolState[ID, IN, OUT]] =
+    tasks.get(taskId) match {
+      case Some(r @ TaskRunState.Running(_, _, _, _)) =>
+        r.countingRequests.foreach(_(count))
+        Some(
+          copy(
+            tasks = tasks + (taskId -> r.copy(countingRequests = Vector.empty))
+          )
+        )
+      case _ => None
+    }
+
 }
