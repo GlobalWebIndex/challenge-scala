@@ -45,10 +45,10 @@ object Main {
         Paths.get(config.getString("csvToJson.resultDirectory"))
       )
     val conversionPool =
-      new WorkerPool(
+      WorkerPool(
         Config.fromConf(config.getConfig("conversion")),
         log,
-        WorkerFactory.default(HttpConversion, saver),
+        WorkerFactory(HttpConversion, saver),
         saver,
         UUIDNamer,
         "conversionPool"

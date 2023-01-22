@@ -26,7 +26,7 @@ trait WorkerFactory[ID, IN, OUT] {
   )(implicit as: ActorSystem[_]): Worker
 }
 object WorkerFactory {
-  def default[ID, IN, OUT, ITEM](
+  def apply[ID, IN, OUT, ITEM](
       fetch: Fetch[IN, ITEM],
       saver: Saver[ID, OUT, ITEM]
   ): WorkerFactory[ID, IN, OUT] = new WorkerFactory[ID, IN, OUT] {

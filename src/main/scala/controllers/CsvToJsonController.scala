@@ -34,7 +34,7 @@ import scala.concurrent.duration.FiniteDuration
 class CsvToJsonController(
     config: Config,
     log: Logger,
-    workerPool: WorkerPool[TaskId, Uri, Path, ByteString]
+    workerPool: WorkerPool[TaskId, Uri, Path]
 ) extends FailFastCirceSupport {
   private implicit val printer = Printer(dropNullValues = true, indent = "")
 
