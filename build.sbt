@@ -3,6 +3,11 @@ organization := "challenge"
 
 version := "1.0"
 
+val AkkaVersion = "2.7.0"
+val AkkaHttpVersion = "10.4.0"
+
+val circeVersion = "0.14.1"
+
 lazy val root = (project in file("."))
   .enablePlugins(ScalaUnidocPlugin)
   .aggregate(pool, app)
@@ -41,16 +46,6 @@ lazy val app = (project in file("app"))
 
 ThisBuild / scalaVersion := "2.13.10"
 
-ScalaUnidoc / unidoc / scalacOptions ++= Seq(
-  "-doc-root-content",
-  "app/rootdoc.txt"
-)
-
-val AkkaVersion = "2.7.0"
-val AkkaHttpVersion = "10.4.0"
-
-val circeVersion = "0.14.1"
-
 ThisBuild / scalafixScalaBinaryVersion := "2.13"
 ThisBuild / scalafixDependencies += "com.github.liancheng" %% "organize-imports" % "0.6.0"
 ThisBuild / scalafixDependencies += "com.github.vovapolu" %% "scaluzzi" % "0.1.23"
@@ -65,3 +60,8 @@ ThisBuild / scalacOptions ++= Seq(
 )
 
 Compile / console / scalacOptions -= "-Wunused:imports"
+
+ScalaUnidoc / unidoc / scalacOptions ++= Seq(
+  "-doc-root-content",
+  "app/rootdoc.txt"
+)
