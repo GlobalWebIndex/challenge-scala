@@ -79,7 +79,7 @@ final case class PoolState[ID, IN, OUT](
                 )
               )
             )
-          case Some(at) =>
+          case Some((at, _)) =>
             onTaskInfo(
               TaskInfo(
                 taskId,
@@ -131,7 +131,8 @@ final case class PoolState[ID, IN, OUT](
   }
   def cancelTask(
       taskId: ID,
-      onCancel: Long => Unit
+      onCancel: Long => Unit,
+      reply: () => Unit
   ): (Boolean, Option[PoolState[ID, IN, OUT]]) = {
     val task = tasks.get(taskId)
     val newState = task.flatMap {
@@ -142,12 +143,17 @@ final case class PoolState[ID, IN, OUT](
           Some(
             copy(tasks =
               tasks + (taskId -> TaskRunState
-                .Running[IN, OUT](s, worker, r, Some(System.currentTimeMillis)))
+                .Running[IN, OUT](
+                  s,
+                  worker,
+                  r,
+                  Some((System.currentTimeMillis, reply))
+                ))
             )
           )
         }
       case TaskRunState.Scheduled(_, result) =>
-        onCancel(0)
+        reply()
         Some(
           copy(
             queue = queue.filterNot(_.taskId == taskId),
@@ -156,6 +162,7 @@ final case class PoolState[ID, IN, OUT](
           )
         )
       case TaskRunState.Finished(_, _, _, _, _) =>
+        reply()
         None
     }
     (task.isDefined, newState)

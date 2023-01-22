@@ -33,8 +33,7 @@ object WorkerPool {
     final case class Private[ID, IN, OUT](
         taskId: ID,
         totalCount: Long,
-        message: TaskFinishReason,
-        finilize: () => Unit = () => ()
+        message: TaskFinishReason
     ) extends Message[ID, IN, OUT]
   }
 
@@ -104,9 +103,9 @@ object WorkerPool {
                     context.self ! Message.Private(
                       taskId,
                       _,
-                      TaskFinishReason.Cancelled,
-                      () => replyTo ! true
-                    )
+                      TaskFinishReason.Cancelled
+                    ),
+                    () => replyTo ! true
                   )
                   if (!response) replyTo ! false
                   newStateOpt match {
@@ -114,14 +113,16 @@ object WorkerPool {
                     case Some(newState) => behavior(newState)
                   }
               }
-            case Message.Private(taskId, totalCount, reason, finalizer) =>
+            case Message.Private(taskId, totalCount, reason) =>
               log.debug(
                 s"Task $taskId is over — $totalCount items processed, final result: ${reason.getClass().getSimpleName()}"
               )
               state.tasks.get(taskId) match {
-                case Some(TaskRunState.Running(runningSince, _, result, _)) =>
+                case Some(
+                      TaskRunState
+                        .Running(runningSince, _, result, cancellationRequested)
+                    ) =>
                   saver.unmake(result, reason)
-                  finalizer()
                   val newTaskState = TaskRunState.Finished[IN, OUT](
                     runningSince,
                     System.currentTimeMillis,
@@ -129,10 +130,9 @@ object WorkerPool {
                     result,
                     reason
                   )
+                  cancellationRequested.foreach(_._2())
                   behavior(state.pickNext(taskId, newTaskState))
-                case _ =>
-                  finalizer()
-                  Behaviors.same
+                case _ => Behaviors.same
               }
           }
         )
