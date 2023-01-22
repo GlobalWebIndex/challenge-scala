@@ -1,7 +1,7 @@
-package pool
+package pool.internal
 
+import pool.Worker
 import pool.interface.TaskFinishReason
-
 sealed trait TaskRunState[IN, OUT]
 object TaskRunState {
   final case class Scheduled[IN, OUT](url: IN, result: OUT)

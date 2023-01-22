@@ -1,14 +1,15 @@
-package pool
+package pool.internal
 
+import pool.WorkerFactory
 import pool.interface.TaskCurrentState
 import pool.interface.TaskFinishReason
 import pool.interface.TaskInfo
 import pool.interface.TaskShortInfo
 import pool.interface.TaskState
+import pool.internal.TaskRunState
 
 import akka.actor.typed.ActorSystem
 import akka.util.Timeout
-
 object PoolState {
   final case class QueuedTask[ID, IN, OUT](taskId: ID, url: IN, result: OUT)
   def apply[ID, IN, OUT](

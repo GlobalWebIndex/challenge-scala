@@ -1,13 +1,15 @@
 package pool
 
 import org.slf4j.Logger
+import pool.WorkerFactory
 import pool.dependencies.Config
 import pool.dependencies.Namer
 import pool.dependencies.Saver
-import pool.interface.PoolMessage
 import pool.interface.TaskFinishReason
 import pool.interface.TaskInfo
 import pool.interface.TaskShortInfo
+import pool.internal.PoolMessage
+import pool.internal.PoolState
 
 import akka.actor.typed.Behavior
 import akka.actor.typed.scaladsl.ActorContext
@@ -17,13 +19,54 @@ import akka.util.Timeout
 
 import scala.concurrent.Future
 
+/** Schedules the tasks.
+  *
+  * Each task copies a stream of items from a given source to a given
+  * destination
+  * @tparam ID
+  *   Unique task identifiers
+  * @tparam IN
+  *   Source address, such as URL
+  * @tparam OUT
+  *   Destination address, such as filename
+  */
 trait WorkerPool[ID, IN, OUT] {
+
+  /** Adds a task to the pool
+    * @param url
+    *   Source address
+    * @return
+    *   Information about the added task, including it's identifier
+    */
   def createTask(url: IN): Future[TaskInfo[ID, OUT]]
+
+  /** Lists all added tasks
+    *
+    * @return
+    *   Abbreviated information about all the tasks
+    */
   def listTasks: Future[Seq[TaskShortInfo[ID]]]
+
+  /** Provides streaming information about the specified task
+    *
+    * @param taskId
+    *   Task identifier
+    * @return
+    *   Information about that task, if it exists
+    */
   def getTask(taskId: ID): Future[Option[TaskInfo[ID, OUT]]]
+
+  /** Cancels, but not removes, the task from the pool
+    *
+    * @param taskId
+    *   Task identifier
+    * @return
+    *   The number of processed items, if the task exists
+    */
   def cancelTask(taskId: ID): Future[Option[Long]]
 }
 
+/** Factory for [[WorkerPool]] */
 object WorkerPool {
   private sealed trait Message[ID, IN, OUT]
   private object Message {
@@ -39,6 +82,24 @@ object WorkerPool {
         extends Message[ID, IN, OUT]
   }
 
+  /** Create a new worker pool
+    *
+    * @param config
+    *   Pool configuration
+    * @param log
+    *   Logger to use for debugging purposes
+    * @param workerFactory
+    *   Factory for creating new workers — normally [[WorkerFactory.apply]]
+    *   should be enough
+    * @param saver
+    *   Utilities for dealing with destinations
+    * @param namer
+    *   Task identifiers generator
+    * @param actorName
+    *   Name for the actor backing up this pool
+    * @return
+    *   The newly created [[WorkerPool]]
+    */
   def apply[ID, IN, OUT, ITEM](
       config: Config,
       log: Logger,

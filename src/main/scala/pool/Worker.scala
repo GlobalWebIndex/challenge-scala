@@ -11,12 +11,43 @@ import akka.stream.scaladsl.Sink
 import akka.stream.scaladsl.Source
 import akka.stream.typed.scaladsl.ActorSource
 
+/** A running task */
 trait Worker {
+
+  /** Request to cancel the task
+    *
+    * @param onCancel
+    *   Callback to acknowledge the finished task and return the number of
+    *   processed items
+    */
   def cancel(onCancel: Long => Unit): Unit
+
+  /** Request to provide the number of processed items
+    *
+    * @param onCount
+    *   Callback to return the number of processed items
+    */
   def currentCount(onCount: Long => Unit): Unit
 }
 
+/** A factory, creating new workers */
 trait WorkerFactory[ID, IN, OUT] {
+
+  /** Create a new worker
+    *
+    * @param taskId
+    *   Task identifier
+    * @param url
+    *   Source address
+    * @param result
+    *   Destination address
+    * @param onDone
+    *   Callback to report the task finishing normally
+    * @param onFailure
+    *   Callback to report the task failing
+    * @return
+    *   The newly created worker
+    */
   def createWorker(
       taskId: ID,
       url: IN,
@@ -25,7 +56,19 @@ trait WorkerFactory[ID, IN, OUT] {
       onFailure: Long => Unit
   )(implicit as: ActorSystem[_]): Worker
 }
+
+/** Factory for [[WorkerFactory]] */
 object WorkerFactory {
+
+  /** Create a new [[WorkerFactory]]
+    *
+    * @param fetch
+    *   Required utilities to fetch the data from source
+    * @param saver
+    *   Required utilities to save the data
+    * @return
+    *   The newly created [[WorkerFactory]]
+    */
   def apply[ID, IN, OUT, ITEM](
       fetch: Fetch[IN, ITEM],
       saver: Saver[ID, OUT, ITEM]
