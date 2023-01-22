@@ -34,7 +34,7 @@ object WorkerPool {
 class WorkerPool[ID, IN, OUT, ITEM](
     config: Config,
     log: Logger,
-    workerCreator: WorkerFactory[ID, IN, OUT],
+    workerFactory: WorkerFactory[ID, IN, OUT],
     saver: Saver[ID, OUT, ITEM],
     namer: Namer[ID],
     actorName: String
@@ -50,7 +50,7 @@ class WorkerPool[ID, IN, OUT, ITEM](
     Behaviors
       .setup[Message[ID, IN, OUT]] { context =>
         def createWorker(taskId: ID, url: IN, result: OUT) =
-          workerCreator.createWorker(
+          workerFactory.createWorker(
             taskId,
             url,
             result,
