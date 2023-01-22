@@ -19,7 +19,7 @@ class FileSaver(log: Logger, resultDirectory: Path)
   def make(file: Path): Sink[ByteString, _] =
     Flow[ByteString]
       .map(ByteString("  ").concat(_))
-      .intersperse(ByteString("[\n"), ByteString(",\n"), ByteString("]"))
+      .intersperse(ByteString("[\n"), ByteString(",\n"), ByteString("\n]"))
       .to(FileIO.toPath(file))
   def unmake(file: Path, reason: TaskFinishReason): Unit =
     if (reason != TaskFinishReason.Done)
