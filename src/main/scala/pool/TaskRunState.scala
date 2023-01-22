@@ -10,7 +10,7 @@ object TaskRunState {
       runningSince: Long,
       worker: Worker,
       result: OUT,
-      cancellationInProgress: Boolean
+      cancellationRequested: Option[Long]
   ) extends TaskRunState[IN, OUT]
   final case class Finished[IN, OUT](
       runningSince: Long,

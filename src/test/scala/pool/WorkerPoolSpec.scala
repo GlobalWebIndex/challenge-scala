@@ -48,10 +48,11 @@ class WorkerPoolSpec
   ): WorkerPool[Long, Unit, String] =
     WorkerPool(config, log, mockFactory, new MockSaver, new MockNamer, name)
   def poolReal(
-      name: String
+      name: String,
+      elements: () => Source[Int, _],
+      saver: MockSaver
   )(implicit ctx: ActorContext[_]): WorkerPool[Long, String, String] = {
-    val saver = new MockSaver
-    val factory = WorkerFactory(new MockFetch, saver)
+    val factory = WorkerFactory(new MockFetch(elements), saver)
     WorkerPool(config, log, factory, saver, new MockNamer, name)
   }
 
@@ -215,13 +216,79 @@ class WorkerPoolSpec
         }
       }
   }
-  "WorkerPool with real factory" should {}
+  "WorkerPool with real factory" should {
+    "process the elements correctly" in runWithContext { implicit ctx =>
+      implicit val ec = ctx.executionContext
+      val saver = new MockSaver
+      val pool = poolReal("processElements", () => Source(List(1, 2, 3)), saver)
+      val creatingFuture = for {
+        task <- pool.createTask("TestTask")
+        _ = Thread.sleep(100)
+        details <- pool.getTask(task.taskId)
+      } yield details
+      whenReady(creatingFuture) { details =>
+        (for {
+          d <- details
+          finished <- d.state match {
+            case TaskCurrentState.Finished(_, result, reason) =>
+              Some(d.taskId, result, reason)
+            case _ => None
+          }
+        } yield finished) shouldBe Some(1, "1", TaskFinishReason.Done)
+        saver.saved should contain theSameElementsAs Map("1" -> List(1, 2, 3))
+      }
+    }
+    "handle failure gracefully" in runWithContext { implicit ctx =>
+      implicit val ec = ctx.executionContext
+      val saver = new MockSaver
+      val failingSource =
+        () => Source(List(1, 2)) ++ Source.failed(new Exception("Failure"))
+      val pool = poolReal("processElements", failingSource, saver)
+      val creatingFuture = for {
+        task <- pool.createTask("TestTask")
+        _ = Thread.sleep(100)
+        details <- pool.getTask(task.taskId)
+      } yield details
+      whenReady(creatingFuture) { details =>
+        (for {
+          d <- details
+          finished <- d.state match {
+            case TaskCurrentState.Finished(_, result, reason) =>
+              Some(d.taskId, result, reason)
+            case _ => None
+          }
+        } yield finished) shouldBe Some(1, "1", TaskFinishReason.Failed)
+      }
+    }
+    "cancel the task when necessary" in runWithContext { implicit ctx =>
+      implicit val ec = ctx.executionContext
+      val saver = new MockSaver
+      val failingSource = () => Source(List(1, 2)) ++ Source.never
+      val pool = poolReal("processElements", failingSource, saver)
+      val creatingFuture = for {
+        task <- pool.createTask("TestTask")
+        _ = Thread.sleep(100)
+        _ <- pool.cancelTask(task.taskId)
+        details <- pool.getTask(task.taskId)
+      } yield details
+      whenReady(creatingFuture) { details =>
+        (for {
+          d <- details
+          finished <- d.state match {
+            case TaskCurrentState.Finished(_, result, reason) =>
+              Some(d.taskId, result, reason)
+            case _ => None
+          }
+        } yield finished) shouldBe Some(1, "1", TaskFinishReason.Cancelled)
+      }
+    }
+  }
 
-  class MockFetch extends Fetch[String, Int] {
+  class MockFetch(elements: () => Source[Int, _]) extends Fetch[String, Int] {
     var requested: Vector[String] = Vector()
     def make(url: String)(implicit as: ActorSystem[_]): Source[Int, _] = {
       requested = requested :+ url
-      Source(List(1, 2, 3))
+      elements()
     }
   }
   class MockSaver extends Saver[Long, String, Int] {

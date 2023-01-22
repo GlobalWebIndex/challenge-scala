@@ -40,7 +40,7 @@ final case class PoolState[ID, IN, OUT](
             time,
             createWorker(taskId, url, result),
             result,
-            false
+            None
           ))
         )
       )
@@ -61,17 +61,38 @@ final case class PoolState[ID, IN, OUT](
     task.foreach {
       case TaskRunState.Scheduled(_, _) =>
         onTaskInfo(TaskInfo(taskId, 0, 0, TaskCurrentState.Scheduled()))
-      case TaskRunState.Running(runningSince, worker, _, _) =>
-        worker.currentCount(count =>
-          onTaskInfo(
-            TaskInfo(
-              taskId,
-              count,
-              runningSince,
-              TaskCurrentState.Running()
+      case TaskRunState.Running(
+            runningSince,
+            worker,
+            result,
+            cancellationRequested
+          ) =>
+        cancellationRequested match {
+          case None =>
+            worker.currentCount(count =>
+              onTaskInfo(
+                TaskInfo(
+                  taskId,
+                  count,
+                  runningSince,
+                  TaskCurrentState.Running()
+                )
+              )
             )
-          )
-        )
+          case Some(at) =>
+            onTaskInfo(
+              TaskInfo(
+                taskId,
+                0,
+                runningSince,
+                TaskCurrentState.Finished(
+                  at,
+                  result,
+                  TaskFinishReason.Cancelled
+                )
+              )
+            )
+        }
       case TaskRunState.Finished(
             runningSince,
             finishedAt,
@@ -115,13 +136,13 @@ final case class PoolState[ID, IN, OUT](
     val task = tasks.get(taskId)
     val newState = task.flatMap {
       case TaskRunState.Running(s, worker, r, cancellationInProgress) =>
-        if (cancellationInProgress) None
+        if (cancellationInProgress.isDefined) None
         else {
           worker.cancel(onCancel)
           Some(
             copy(tasks =
               tasks + (taskId -> TaskRunState
-                .Running[IN, OUT](s, worker, r, true))
+                .Running[IN, OUT](s, worker, r, Some(System.currentTimeMillis)))
             )
           )
         }
@@ -152,7 +173,7 @@ final case class PoolState[ID, IN, OUT](
             System.currentTimeMillis,
             createWorker(task.taskId, task.url, task.result),
             task.result,
-            false
+            None
           ))
         )
     }
