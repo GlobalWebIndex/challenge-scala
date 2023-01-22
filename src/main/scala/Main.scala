@@ -6,7 +6,7 @@ import conversion.FileSaver
 import conversion.HttpConversion
 import conversion.UUIDNamer
 import models.TaskId
-import pool.DefaultWorkerFactory
+import pool.WorkerFactory
 import pool.WorkerPool
 import pool.dependencies.Config
 
@@ -44,7 +44,7 @@ object Main {
         log,
         Paths.get(config.getString("csvToJson.resultDirectory"))
       )
-    val workerFactory = new DefaultWorkerFactory(HttpConversion, saver)
+    val workerFactory = WorkerFactory.default(HttpConversion, saver)
     val conversionPool =
       new WorkerPool(
         Config.fromConf(config.getConfig("conversion")),

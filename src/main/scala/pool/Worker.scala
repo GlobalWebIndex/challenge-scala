@@ -25,27 +25,26 @@ trait WorkerFactory[ID, IN, OUT] {
       onFailure: Long => Unit
   )(implicit as: ActorSystem[_]): Worker
 }
+object WorkerFactory {
+  def default[ID, IN, OUT, ITEM](
+      fetch: Fetch[IN, ITEM],
+      saver: Saver[ID, OUT, ITEM]
+  ): WorkerFactory[ID, IN, OUT] = new WorkerFactory[ID, IN, OUT] {
+    def createWorker(
+        taskId: ID,
+        url: IN,
+        result: OUT,
+        onCount: Long => Unit,
+        onFailure: Long => Unit
+    )(implicit as: ActorSystem[_]): Worker =
+      new WorkerImpl(
+        fetch.make(url),
+        saver.make(result),
+        onCount,
+        onFailure
+      )
+  }
 
-class DefaultWorkerFactory[ID, IN, OUT, ITEM](
-    fetch: Fetch[IN, ITEM],
-    saver: Saver[ID, OUT, ITEM]
-) extends WorkerFactory[ID, IN, OUT] {
-  def createWorker(
-      taskId: ID,
-      url: IN,
-      result: OUT,
-      onCount: Long => Unit,
-      onFailure: Long => Unit
-  )(implicit as: ActorSystem[_]): Worker =
-    new WorkerImpl(
-      fetch.make(url),
-      saver.make(result),
-      onCount,
-      onFailure
-    )
-}
-
-object WorkerImpl {
   private sealed trait Message
   private object Message {
     object Line extends Message
@@ -66,37 +65,37 @@ object WorkerImpl {
     }
     def finish(): Unit = onFinish(count)
   }
-}
 
-class WorkerImpl[ITEM](
-    source: Source[ITEM, _],
-    result: Sink[ITEM, _],
-    onDone: Long => Unit,
-    onFail: Long => Unit
-)(implicit as: ActorSystem[_])
-    extends Worker {
-  import WorkerImpl._
+  private class WorkerImpl[ITEM](
+      source: Source[ITEM, _],
+      result: Sink[ITEM, _],
+      onDone: Long => Unit,
+      onFail: Long => Unit
+  )(implicit as: ActorSystem[_])
+      extends Worker {
 
-  private val commands = ActorSource.actorRef[Message](
-    PartialFunction.empty,
-    PartialFunction.empty,
-    0,
-    OverflowStrategy.fail
-  )
-  private val counter =
-    Flow
-      .fromFunction[ITEM, Message](_ => Message.Line)
-      .recover(_ => Message.Failure(onFail))
-      .mergeMat(commands, true)(Keep.right)
-      .takeWhile({ case Message.Cancel(_) => false; case _ => true }, true)
-      .statefulMap(() => CounterState(0, onDone))(
-        (c, m) => (c.handleMessage(m), ()),
-        { c => c.onFinish(c.count); None }
-      )
-      .to(Sink.ignore)
+    private val commands = ActorSource.actorRef[Message](
+      PartialFunction.empty,
+      PartialFunction.empty,
+      0,
+      OverflowStrategy.fail
+    )
+    private val counter =
+      Flow
+        .fromFunction[ITEM, Message](_ => Message.Line)
+        .recover(_ => Message.Failure(onFail))
+        .mergeMat(commands, true)(Keep.right)
+        .takeWhile({ case Message.Cancel(_) => false; case _ => true }, true)
+        .statefulMap(() => CounterState(0, onDone))(
+          (c, m) => (c.handleMessage(m), ()),
+          { c => c.onFinish(c.count); None }
+        )
+        .to(Sink.ignore)
 
-  private val actor = source.alsoToMat(counter)(Keep.right).to(result).run()
+    private val actor = source.alsoToMat(counter)(Keep.right).to(result).run()
 
-  def cancel(onCancel: Long => Unit): Unit = actor ! Message.Cancel(onCancel)
-  def currentCount(onCount: Long => Unit): Unit = actor ! Message.Count(onCount)
+    def cancel(onCancel: Long => Unit): Unit = actor ! Message.Cancel(onCancel)
+    def currentCount(onCount: Long => Unit): Unit =
+      actor ! Message.Count(onCount)
+  }
 }
