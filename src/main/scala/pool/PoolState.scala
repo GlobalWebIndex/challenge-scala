@@ -147,6 +147,7 @@ final case class PoolState[ID, IN, OUT](
           )
         }
       case TaskRunState.Scheduled(_, result) =>
+        onCancel(0)
         Some(
           copy(
             queue = queue.filterNot(_.taskId == taskId),

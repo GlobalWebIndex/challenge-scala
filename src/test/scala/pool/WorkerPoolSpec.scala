@@ -236,6 +236,7 @@ class WorkerPoolSpec
           }
         } yield finished) shouldBe Some(1, "1", TaskFinishReason.Done)
         saver.saved should contain theSameElementsAs Map("1" -> List(1, 2, 3))
+        saver.unmade shouldBe List(("1", TaskFinishReason.Done))
       }
     }
     "handle failure gracefully" in runWithContext { implicit ctx =>
@@ -258,6 +259,7 @@ class WorkerPoolSpec
             case _ => None
           }
         } yield finished) shouldBe Some(1, "1", TaskFinishReason.Failed)
+        saver.unmade shouldBe List(("1", TaskFinishReason.Failed))
       }
     }
     "cancel the task when necessary" in runWithContext { implicit ctx =>
@@ -280,6 +282,8 @@ class WorkerPoolSpec
             case _ => None
           }
         } yield finished) shouldBe Some(1, "1", TaskFinishReason.Cancelled)
+        saver.unmade shouldBe List(("1", TaskFinishReason.Cancelled))
+        saver.saved shouldBe Map("1" -> List(1, 2))
       }
     }
   }

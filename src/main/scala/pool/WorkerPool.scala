@@ -33,7 +33,8 @@ object WorkerPool {
     final case class Private[ID, IN, OUT](
         taskId: ID,
         totalCount: Long,
-        message: TaskFinishReason
+        message: TaskFinishReason,
+        finilize: () => Unit = () => ()
     ) extends Message[ID, IN, OUT]
   }
 
@@ -103,22 +104,24 @@ object WorkerPool {
                     context.self ! Message.Private(
                       taskId,
                       _,
-                      TaskFinishReason.Cancelled
+                      TaskFinishReason.Cancelled,
+                      () => replyTo ! true
                     )
                   )
-                  replyTo ! response
+                  if (!response) replyTo ! false
                   newStateOpt match {
                     case None           => Behaviors.same
                     case Some(newState) => behavior(newState)
                   }
               }
-            case Message.Private(taskId, totalCount, reason) =>
+            case Message.Private(taskId, totalCount, reason, finalizer) =>
               log.debug(
                 s"Task $taskId is over — $totalCount items processed, final result: ${reason.getClass().getSimpleName()}"
               )
               state.tasks.get(taskId) match {
                 case Some(TaskRunState.Running(runningSince, _, result, _)) =>
                   saver.unmake(result, reason)
+                  finalizer()
                   val newTaskState = TaskRunState.Finished[IN, OUT](
                     runningSince,
                     System.currentTimeMillis,
@@ -127,7 +130,9 @@ object WorkerPool {
                     reason
                   )
                   behavior(state.pickNext(taskId, newTaskState))
-                case _ => Behaviors.same
+                case _ =>
+                  finalizer()
+                  Behaviors.same
               }
           }
         )
