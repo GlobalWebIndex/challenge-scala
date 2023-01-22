@@ -41,6 +41,11 @@ lazy val app = (project in file("app"))
 
 ThisBuild / scalaVersion := "2.13.10"
 
+ScalaUnidoc / unidoc / scalacOptions ++= Seq(
+  "-doc-root-content",
+  "app/rootdoc.txt"
+)
+
 val AkkaVersion = "2.7.0"
 val AkkaHttpVersion = "10.4.0"
 
