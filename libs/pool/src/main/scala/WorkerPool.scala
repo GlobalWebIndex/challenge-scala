@@ -160,10 +160,8 @@ object WorkerPool {
                   if (!response) replyTo ! None
                   newState
                 case PoolMessage.CancelTask(taskId, replyTo) =>
-                  val (response, newState) = state.cancelTask(
-                    taskId,
-                    replyTo ! Some(_)
-                  )
+                  val (response, newState) =
+                    state.cancelTask(taskId, replyTo ! Some(_))
                   if (!response) replyTo ! None
                   newState
               }
