@@ -48,6 +48,7 @@ object Main {
       actorContext: ActorContext[_]
   ): (WorkerPool[TaskId, Uri, Path], Route) = {
     implicit val ec = actorContext.executionContext
+    implicit val actorSystem = actorContext.system
     val saver =
       new FileSaver(
         LoggerFactory.getLogger("FileSaver"),

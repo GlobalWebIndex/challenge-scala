@@ -54,7 +54,7 @@ trait WorkerFactory[ID, IN, OUT] {
       result: OUT,
       onDone: Long => Unit,
       onFailure: Long => Unit
-  )(implicit as: ActorSystem[_]): Worker
+  ): Worker
 }
 
 /** Factory for [[WorkerFactory]] */
@@ -72,21 +72,22 @@ object WorkerFactory {
   def apply[ID, IN, OUT, ITEM](
       fetch: Fetch[IN, ITEM],
       saver: Saver[ID, OUT, ITEM]
-  ): WorkerFactory[ID, IN, OUT] = new WorkerFactory[ID, IN, OUT] {
-    def createWorker(
-        taskId: ID,
-        url: IN,
-        result: OUT,
-        onDone: Long => Unit,
-        onFailure: Long => Unit
-    )(implicit as: ActorSystem[_]): Worker =
-      new WorkerImpl(
-        fetch.make(url),
-        saver.make(result),
-        onDone,
-        onFailure
-      )
-  }
+  )(implicit as: ActorSystem[_]): WorkerFactory[ID, IN, OUT] =
+    new WorkerFactory[ID, IN, OUT] {
+      def createWorker(
+          taskId: ID,
+          url: IN,
+          result: OUT,
+          onDone: Long => Unit,
+          onFailure: Long => Unit
+      ): Worker =
+        new WorkerImpl(
+          fetch.make(url),
+          saver.make(result),
+          onDone,
+          onFailure
+        )
+    }
 
   private sealed trait Message
   private object Message {

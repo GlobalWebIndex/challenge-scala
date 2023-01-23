@@ -8,8 +8,6 @@ import pool.interface.TaskShortInfo
 import pool.interface.TaskState
 import pool.internal.TaskRunState
 
-import akka.actor.typed.ActorSystem
-import akka.util.Timeout
 object PoolState {
   final case class QueuedTask[ID, IN, OUT](taskId: ID, url: IN, result: OUT)
   def apply[ID, IN, OUT](
@@ -45,25 +43,22 @@ final case class PoolState[ID, IN, OUT](
       runningSince: Long,
       url: IN,
       result: OUT
-  )(implicit as: ActorSystem[_]) =
-    (taskId -> TaskRunState.Running[IN, OUT](
-      runningSince,
-      workerFactory.createWorker(
-        taskId,
-        url,
-        result,
-        reportFinish(taskId, _, TaskFinishReason.Done),
-        reportFinish(taskId, _, TaskFinishReason.Failed)
-      ),
+  ) = (taskId -> TaskRunState.Running[IN, OUT](
+    runningSince,
+    workerFactory.createWorker(
+      taskId,
+      url,
       result,
-      Vector.empty
-    ))
+      reportFinish(taskId, _, TaskFinishReason.Done),
+      reportFinish(taskId, _, TaskFinishReason.Failed)
+    ),
+    result,
+    Vector.empty
+  ))
   def addTask(
       taskId: ID,
       url: IN,
       result: OUT
-  )(implicit
-      as: ActorSystem[_]
   ): Option[(TaskInfo[ID, OUT], PoolState[ID, IN, OUT])] =
     if (stopRequest.isDefined) None
     else
@@ -199,9 +194,6 @@ final case class PoolState[ID, IN, OUT](
       taskId: ID,
       totalCount: Long,
       reason: TaskFinishReason
-  )(implicit
-      timeout: Timeout,
-      as: ActorSystem[_]
   ): Option[(OUT, Option[ID], PoolState[ID, IN, OUT])] =
     tasks.get(taskId) flatMap {
       case r @ TaskRunState.Running(_, _, _, _) =>

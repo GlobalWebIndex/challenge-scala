@@ -364,7 +364,7 @@ class WorkerPoolSpec
         result: String,
         onDone: Long => Unit,
         onFailure: Long => Unit
-    )(implicit as: ActorSystem[_]): Worker = {
+    ): Worker = {
       val worker = new MockWorker(onDone, onFailure)
       workers = workers + (taskId -> worker)
       worker
