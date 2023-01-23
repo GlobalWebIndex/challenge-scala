@@ -97,7 +97,7 @@ object Main {
         Behaviors.receiveMessage {
           case None => Behaviors.same
           case Some(binding) =>
-            ctx.log.info("Server started at $host:$port")
+            ctx.log.info(s"Server started at $host:$port")
             Behaviors.receiveMessage {
               case None =>
                 binding.unbind()

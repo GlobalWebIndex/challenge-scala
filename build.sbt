@@ -10,6 +10,9 @@ val circeVersion = "0.14.1"
 
 lazy val root = (project in file("."))
   .enablePlugins(ScalaUnidocPlugin)
+  .settings(
+    run := (app / Compile / run).evaluated
+  )
   .aggregate(pool, app)
 lazy val pool = (project in file("libs/pool"))
   .settings(
