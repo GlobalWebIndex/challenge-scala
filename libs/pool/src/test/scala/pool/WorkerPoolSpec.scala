@@ -235,15 +235,18 @@ class WorkerPoolSpec
             case _ => None
           }
         } yield finished) shouldBe Some(1, "1", TaskFinishReason.Done)
-        saver.saved should contain theSameElementsAs Map("1" -> List(1, 2, 3))
         saver.unmade shouldBe List(("1", TaskFinishReason.Done))
+        saver.saved should contain theSameElementsAs Map("1" -> List(1, 2, 3))
       }
     }
     "handle failure gracefully" in runWithContext { implicit ctx =>
       implicit val ec = ctx.executionContext
       val saver = new MockSaver
       val failingSource =
-        () => Source(List(1, 2)) ++ Source.failed(new Exception("Failure"))
+        () =>
+          Source(List(1, 2)) ++ Source.lazySource(() =>
+            Source.failed(new Exception("Failure"))
+          )
       val pool = poolReal("processElements", failingSource, saver)
       val creatingFuture = for {
         task <- pool.createTask("TestTask")
@@ -260,6 +263,7 @@ class WorkerPoolSpec
           }
         } yield finished) shouldBe Some(1, "1", TaskFinishReason.Failed)
         saver.unmade shouldBe List(("1", TaskFinishReason.Failed))
+        saver.saved shouldBe Map("1" -> List(1, 2))
       }
     }
     "cancel the task when necessary" in runWithContext { implicit ctx =>
