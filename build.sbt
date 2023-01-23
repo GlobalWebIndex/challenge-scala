@@ -66,5 +66,5 @@ Compile / console / scalacOptions -= "-Wunused:imports"
 
 ScalaUnidoc / unidoc / scalacOptions ++= Seq(
   "-doc-root-content",
-  "app/rootdoc.txt"
+  "app/rootdoc.md"
 )

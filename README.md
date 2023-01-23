@@ -1,3 +1,11 @@
+# Building & running
+
+`sbt run` should suffice.
+
+`sbt unidoc` should generate some rudimentary documentation, which provides usage instructions, among other things. Or just check `app/rootdoc.txt`.
+
+The rest of this file is left unchanged.
+
 # Scala challenge
 
 Hello future colleague! In this assessment, we request that you implement an HTTP application that converts CSV data sets to JSON data sets. The application will provide the following endpoints:
