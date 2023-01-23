@@ -43,7 +43,12 @@ class CsvToJsonController(
 
   def createTask(uri: Uri)(implicit ec: ExecutionContext): Route = {
     log.debug(s"Creating a task to convert csv from $uri")
-    complete(workerPool.createTask(uri).map(_.taskId))
+    onSuccess(workerPool.createTask(uri)) {
+      case None =>
+        complete(StatusCodes.BadRequest, HttpEntity("Can't create new tasks"))
+      case Some(taskInfo) =>
+        complete(taskInfo.taskId)
+    }
   }
   def listTasks(resultUrl: TaskId => String)(implicit
       ec: ExecutionContext
