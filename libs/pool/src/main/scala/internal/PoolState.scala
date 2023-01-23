@@ -111,19 +111,13 @@ final case class PoolState[ID, IN, OUT](
           )
         )
         Some(copy(tasks = tasks + (taskId -> newTaskState)))
-      case TaskRunState.Finished(
-            runningSince,
-            finishedAt,
-            linesProcessed,
-            result,
-            reason
-          ) =>
+      case f @ TaskRunState.Finished(_, _, _, _, _) =>
         onTaskInfo(
           TaskInfo(
             taskId,
-            linesProcessed,
-            runningSince,
-            TaskCurrentState.Finished(finishedAt, result, reason)
+            f.linesProcessed,
+            f.runningSince,
+            TaskCurrentState.Finished(f.finishedAt, f.result, f.reason)
           )
         )
         None
