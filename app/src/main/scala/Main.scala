@@ -11,16 +11,23 @@ import pool.WorkerFactory
 import pool.WorkerPool
 import pool.dependencies.Config
 
+import akka.Done
+import akka.actor.typed.ActorRef
 import akka.actor.typed.ActorSystem
 import akka.actor.typed.scaladsl.ActorContext
+import akka.actor.typed.scaladsl.AskPattern._
 import akka.actor.typed.scaladsl.Behaviors
 import akka.http.scaladsl.Http
 import akka.http.scaladsl.model.Uri
 import akka.http.scaladsl.server.Directives._
 import akka.http.scaladsl.server.Route
 import akka.http.scaladsl.unmarshalling.FromRequestUnmarshaller
+import akka.util.Timeout
 
+import java.nio.file.Path
 import java.nio.file.Paths
+import scala.concurrent.Await
+import scala.concurrent.duration.Duration
 import scala.io.StdIn
 
 /** Program entry point */
@@ -37,8 +44,11 @@ object Main {
 
   private def createRoute(
       config: TSConfig
-  )(implicit actorContext: ActorContext[_]): Route = {
+  )(implicit
+      actorContext: ActorContext[_]
+  ): (WorkerPool[TaskId, Uri, Path], Route) = {
     implicit val ec = actorContext.executionContext
+    implicit val actorSystem = actorContext.system
     val saver =
       new FileSaver(
         LoggerFactory.getLogger("FileSaver"),
@@ -62,7 +72,7 @@ object Main {
         conversionPool
       )
 
-    concat(
+    val route = concat(
       (get & path("check")) {
         checkController.check
       },
@@ -82,6 +92,14 @@ object Main {
         csvToJsonController.taskResult(_)
       }
     )
+    (conversionPool, route)
+  }
+
+  private sealed trait Message
+  private object Message {
+    object StartFailure extends Message
+    final case class Stopping(replyTo: ActorRef[Done]) extends Message
+    final case class Stopped(replyTo: ActorRef[Done]) extends Message
   }
 
   def main(args: Array[String]): Unit = {
@@ -89,30 +107,46 @@ object Main {
     val host = config.getString("csvToJson.host")
     val port = config.getInt("csvToJson.port")
     val server = ActorSystem(
-      Behaviors.setup[Option[Http.ServerBinding]] { ctx =>
-        implicit val system = ctx.system
-        implicit val ec = ctx.executionContext
-        ctx.pipeToSelf(
-          Http()
-            .newServerAt(host, port)
-            .bind(createRoute(config)(ctx))
-        )(_.toOption)
-        Behaviors.receiveMessage {
-          case None => Behaviors.same
-          case Some(binding) =>
-            ctx.log.info(s"Server started at $host:$port")
-            Behaviors.receiveMessage {
-              case None =>
-                binding.unbind()
-                ctx.log.info("Server stopped")
-                Behaviors.stopped
-              case Some(_) => Behaviors.same
-            }
-        }
-      },
+      Behaviors
+        .setup[Either[Message, Http.ServerBinding]] { ctx =>
+          implicit val system = ctx.system
+          implicit val ec = ctx.executionContext
+          val (pool, route) = createRoute(config)(ctx)
+          ctx.pipeToSelf(Http().newServerAt(host, port).bind(route))(
+            _.toEither.left.map(_ => Message.StartFailure)
+          )
+          Behaviors.receiveMessage {
+            case Left(_) =>
+              ctx.log.info("Server failed to start")
+              Behaviors.stopped
+            case Right(binding) =>
+              ctx.log.info(s"Server started at $host:$port")
+              Behaviors.receiveMessage {
+                case Left(Message.StartFailure) => Behaviors.same
+                case Left(Message.Stopping(replyTo)) =>
+                  binding.unbind()
+                  ctx.log.info("Server stopped")
+                  ctx.pipeToSelf(pool.cancelAll())(_ =>
+                    Left(Message.Stopped(replyTo))
+                  )
+                  Behaviors.same
+                case Left(Message.Stopped(replyTo)) =>
+                  ctx.log.info("All tasks cancelled")
+                  replyTo ! Done
+                  Behaviors.stopped
+                case Right(_) => Behaviors.same
+              }
+          }
+        },
       "challenge"
     )
     StdIn.readLine()
-    server ! None
+    Await.result(
+      server.ask[Done](r => Left(Message.Stopping(r)))(
+        Timeout(Duration(30, "s")),
+        server.scheduler
+      ),
+      Duration(1, "m")
+    )
   }
 }

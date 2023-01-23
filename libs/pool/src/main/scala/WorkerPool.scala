@@ -11,6 +11,7 @@ import pool.interface.TaskShortInfo
 import pool.internal.PoolMessage
 import pool.internal.PoolState
 
+import akka.Done
 import akka.actor.typed.Behavior
 import akka.actor.typed.scaladsl.ActorContext
 import akka.actor.typed.scaladsl.AskPattern._
@@ -38,7 +39,7 @@ trait WorkerPool[ID, IN, OUT] {
     * @return
     *   Information about the added task, including it's identifier
     */
-  def createTask(url: IN): Future[TaskInfo[ID, OUT]]
+  def createTask(url: IN): Future[Option[TaskInfo[ID, OUT]]]
 
   /** Lists all added tasks
     *
@@ -64,6 +65,9 @@ trait WorkerPool[ID, IN, OUT] {
     *   The number of processed items, if the task exists
     */
   def cancelTask(taskId: ID): Future[Option[Long]]
+
+  /** Cancels all tasks and prevents new ones from being created */
+  def cancelAll(): Future[Done]
 }
 
 /** Factory for [[WorkerPool]] */
@@ -129,7 +133,7 @@ object WorkerPool {
         actorName
       )
 
-      def createTask(url: IN): Future[TaskInfo[ID, OUT]] = {
+      def createTask(url: IN): Future[Option[TaskInfo[ID, OUT]]] = {
         val taskId = namer.makeTaskId()
         actor.ask(PoolMessage.CreateTask(taskId, url, saver.target(taskId), _))
       }
@@ -139,6 +143,7 @@ object WorkerPool {
         actor.ask(PoolMessage.GetTask(taskId, _))
       def cancelTask(taskId: ID): Future[Option[Long]] =
         actor.ask(PoolMessage.CancelTask(taskId, _))
+      def cancelAll(): Future[Done] = actor.ask(PoolMessage.CancelAll(_))
 
       private def behavior(
           state: PoolState[ID, IN, OUT]
@@ -148,9 +153,9 @@ object WorkerPool {
             case Message.Public(message) =>
               message match {
                 case PoolMessage.CreateTask(taskId, url, result, replyTo) =>
-                  val (taskInfo, newState) = state.addTask(taskId, url, result)
-                  replyTo ! taskInfo
-                  Some(newState)
+                  val added = state.addTask(taskId, url, result)
+                  replyTo ! added.map(_._1)
+                  added.map(_._2)
                 case PoolMessage.ListTasks(replyTo) =>
                   replyTo ! state.listTasks()
                   None
@@ -164,13 +169,17 @@ object WorkerPool {
                     state.cancelTask(taskId, replyTo ! Some(_))
                   if (!response) replyTo ! None
                   newState
+                case PoolMessage.CancelAll(replyTo) =>
+                  val newState = state.cancelAll(() => replyTo ! Done)
+                  Some(newState)
               }
             case Message.TaskFinished(taskId, totalCount, reason) =>
               log.debug(
-                s"Task $taskId is over — $totalCount items processed, final result: ${reason.getClass().getSimpleName()}"
+                s"Task $taskId is over — $totalCount items processed, final result: $reason"
               )
               state.finishTask(taskId, totalCount, reason).map {
-                case (result, newState) =>
+                case (result, newTaskId, newState) =>
+                  log.debug(s"Starting scheduled task $newTaskId")
                   saver.unmake(result, reason)
                   newState
               }

@@ -18,6 +18,7 @@ import pool.interface.TaskInfo
 import pool.interface.TaskShortInfo
 import pool.interface.TaskState
 
+import akka.Done
 import akka.http.scaladsl.model.ContentTypes
 import akka.http.scaladsl.model.StatusCodes
 import akka.http.scaladsl.model.Uri
@@ -40,9 +41,16 @@ class CsvToJsonControllerSpec
   def pool: WorkerPool[TaskId, Uri, Path] = new WorkerPool[TaskId, Uri, Path] {
     val startTime = System.currentTimeMillis
     var getTaskCallCount = 0
-    def createTask(url: Uri): Future[TaskInfo[TaskId, Path]] =
+    def createTask(url: Uri): Future[Option[TaskInfo[TaskId, Path]]] =
       Future.successful(
-        TaskInfo(TaskId("CreatedTaskId"), 0, 0, TaskCurrentState.Scheduled())
+        Some(
+          TaskInfo[TaskId, Path](
+            TaskId("CreatedTaskId"),
+            0,
+            0,
+            TaskCurrentState.Scheduled()
+          )
+        ).filter(_ => url.authority.host.toString != "fail.com")
       )
     def listTasks: Future[Seq[TaskShortInfo[TaskId]]] =
       Future.successful(
@@ -88,6 +96,7 @@ class CsvToJsonControllerSpec
           List("TaskA", "TaskB", "TaskC", "TaskD").contains(taskId.id)
         )
       )
+    def cancelAll(): Future[Done] = Future.successful(Done)
   }
 
   "CsvToJsonController" should {
@@ -97,6 +106,12 @@ class CsvToJsonControllerSpec
         status shouldBe StatusCodes.OK
         contentType shouldBe ContentTypes.`text/plain(UTF-8)`
         responseAs[String] shouldBe "CreatedTaskId"
+      }
+    }
+    "report failure to create task" in {
+      val controller = new CsvToJsonController(config, log, pool)
+      Post() ~> controller.createTask(Uri("http://fail.com/")) ~> check {
+        status shouldBe StatusCodes.BadRequest
       }
     }
     "list tasks" in {

@@ -59,10 +59,12 @@ class WorkerPoolSpec
   "WorkerPool with fake factory" should {
     "create first task" in runWithContext { implicit ctx =>
       val pool = poolMock("createFirst")
-      whenReady(pool.createTask(())) { taskInfo =>
-        taskInfo.taskId shouldBe 1
-        taskInfo.linesProcessed shouldBe 0
-        taskInfo.state shouldBe TaskCurrentState.Running()
+      whenReady(pool.createTask(())) {
+        _.map(taskInfo =>
+          (taskInfo.taskId, taskInfo.linesProcessed, taskInfo.state)
+        ) shouldBe Some(
+          (1, 0, TaskCurrentState.Running())
+        )
       }
     }
     "create second task" in runWithContext { implicit ctx =>
@@ -72,9 +74,10 @@ class WorkerPoolSpec
         _ <- pool.createTask(())
         last <- pool.createTask(())
       } yield last
-      whenReady(creatingFuture) { taskInfo =>
-        taskInfo.taskId shouldBe 2
-        taskInfo.state shouldBe TaskCurrentState.Running()
+      whenReady(creatingFuture) {
+        _.map(taskInfo => (taskInfo.taskId, taskInfo.state)) shouldBe Some(
+          (2, TaskCurrentState.Running())
+        )
       }
     }
     "create third task in suspended state" in runWithContext { implicit ctx =>
@@ -85,9 +88,10 @@ class WorkerPoolSpec
         _ <- pool.createTask(())
         last <- pool.createTask(())
       } yield last
-      whenReady(creatingFuture) { taskInfo =>
-        taskInfo.taskId shouldBe 3
-        taskInfo.state shouldBe TaskCurrentState.Scheduled()
+      whenReady(creatingFuture) {
+        _.map(taskInfo => (taskInfo.taskId, taskInfo.state)) shouldBe Some(
+          (3, TaskCurrentState.Scheduled())
+        )
       }
     }
     "run third task when first is finished" in runWithContext { implicit ctx =>
@@ -97,12 +101,13 @@ class WorkerPoolSpec
       val creatingFuture = for {
         firstTask <- pool.createTask(())
         _ <- pool.createTask(())
-        _ = factory.workers.get(firstTask.taskId).get.finish()
+        _ = factory.workers.get(firstTask.get.taskId).get.finish()
         thirdTask <- pool.createTask(())
       } yield thirdTask
-      whenReady(creatingFuture) { taskInfo =>
-        taskInfo.taskId shouldBe 3
-        taskInfo.state shouldBe TaskCurrentState.Running()
+      whenReady(creatingFuture) {
+        _.map(taskInfo => (taskInfo.taskId, taskInfo.state)) shouldBe Some(
+          (3, TaskCurrentState.Running())
+        )
       }
     }
     "list tasks correctly" in runWithContext { implicit ctx =>
@@ -113,8 +118,8 @@ class WorkerPoolSpec
         firstTask <- pool.createTask(())
         secondTask <- pool.createTask(())
         _ <- pool.createTask(())
-        _ = factory.workers.get(firstTask.taskId).get.finish()
-        _ = factory.workers.get(secondTask.taskId).get.fail()
+        _ = factory.workers.get(firstTask.get.taskId).get.finish()
+        _ = factory.workers.get(secondTask.get.taskId).get.fail()
         list <- pool.listTasks
       } yield list
       whenReady(creatingFuture) { list =>
@@ -131,8 +136,8 @@ class WorkerPoolSpec
       val pool = poolMock("taskDetails", factory)
       val creatingFuture = for {
         task <- pool.createTask(())
-        _ = factory.workers.get(task.taskId).get.processed = 1000
-        details <- pool.getTask(task.taskId)
+        _ = factory.workers.get(task.get.taskId).get.processed = 1000
+        details <- pool.getTask(task.get.taskId)
       } yield details
       whenReady(creatingFuture) { details =>
         details.map(d => (d.taskId, d.linesProcessed, d.state)) shouldBe
@@ -145,8 +150,8 @@ class WorkerPoolSpec
       val pool = poolMock("finishedDetails", factory)
       val creatingFuture = for {
         task <- pool.createTask(())
-        _ = factory.workers.get(task.taskId).get.finish()
-        details <- pool.getTask(task.taskId)
+        _ = factory.workers.get(task.get.taskId).get.finish()
+        details <- pool.getTask(task.get.taskId)
       } yield details
       whenReady(creatingFuture) { details =>
         (for {
@@ -165,8 +170,8 @@ class WorkerPoolSpec
       val pool = poolMock("failedDetails", factory)
       val creatingFuture = for {
         task <- pool.createTask(())
-        _ = factory.workers.get(task.taskId).get.fail()
-        details <- pool.getTask(task.taskId)
+        _ = factory.workers.get(task.get.taskId).get.fail()
+        details <- pool.getTask(task.get.taskId)
       } yield details
       whenReady(creatingFuture) { details =>
         (for {
@@ -184,8 +189,8 @@ class WorkerPoolSpec
       val pool = poolMock("cancelTask")
       val creatingFuture = for {
         task <- pool.createTask(())
-        cancelled <- pool.cancelTask(task.taskId)
-        details <- pool.getTask(task.taskId)
+        cancelled <- pool.cancelTask(task.get.taskId)
+        details <- pool.getTask(task.get.taskId)
       } yield (cancelled, details)
       whenReady(creatingFuture) { case (cancelled, details) =>
         cancelled shouldBe defined
@@ -208,13 +213,38 @@ class WorkerPoolSpec
           firstTask <- pool.createTask(())
           _ <- pool.createTask(())
           thirdTask <- pool.createTask(())
-          _ = factory.workers.get(firstTask.taskId).get.finish()
-          details <- pool.getTask(thirdTask.taskId)
+          _ = factory.workers.get(firstTask.get.taskId).get.finish()
+          details <- pool.getTask(thirdTask.get.taskId)
         } yield details
         whenReady(creatingFuture) { details =>
           details.map(_.state) shouldBe Some(TaskCurrentState.Running())
         }
       }
+    "cancel all tasks" in runWithContext { implicit ctx =>
+      implicit val ec = ctx.executionContext
+      val pool = poolMock("cancelAll")
+      val creatingFuture = for {
+        _ <- pool.createTask(())
+        _ <- pool.createTask(())
+        _ <- pool.createTask(())
+        _ <- pool.cancelAll()
+        list <- pool.listTasks
+      } yield list
+      whenReady(creatingFuture) { list =>
+        list.map(_.state) shouldBe List.fill(3)(TaskState.CANCELLED)
+      }
+    }
+    "stop before running anything" in runWithContext { implicit ctx =>
+      implicit val ec = ctx.executionContext
+      val pool = poolMock("cancelAll")
+      val creatingFuture = for {
+        _ <- pool.cancelAll()
+        list <- pool.listTasks
+      } yield list
+      whenReady(creatingFuture) { list =>
+        list.map(_.state) shouldBe List.empty
+      }
+    }
   }
   "WorkerPool with real factory" should {
     "process the elements correctly" in runWithContext { implicit ctx =>
@@ -224,7 +254,7 @@ class WorkerPoolSpec
       val creatingFuture = for {
         task <- pool.createTask("TestTask")
         _ = Thread.sleep(100)
-        details <- pool.getTask(task.taskId)
+        details <- pool.getTask(task.get.taskId)
       } yield details
       whenReady(creatingFuture) { details =>
         (for {
@@ -251,7 +281,7 @@ class WorkerPoolSpec
       val creatingFuture = for {
         task <- pool.createTask("TestTask")
         _ = Thread.sleep(100)
-        details <- pool.getTask(task.taskId)
+        details <- pool.getTask(task.get.taskId)
       } yield details
       whenReady(creatingFuture) { details =>
         (for {
@@ -274,8 +304,8 @@ class WorkerPoolSpec
       val creatingFuture = for {
         task <- pool.createTask("TestTask")
         _ = Thread.sleep(100)
-        _ <- pool.cancelTask(task.taskId)
-        details <- pool.getTask(task.taskId)
+        _ <- pool.cancelTask(task.get.taskId)
+        details <- pool.getTask(task.get.taskId)
       } yield details
       whenReady(creatingFuture) { details =>
         (for {
@@ -334,7 +364,7 @@ class WorkerPoolSpec
         result: String,
         onDone: Long => Unit,
         onFailure: Long => Unit
-    )(implicit as: ActorSystem[_]): Worker = {
+    ): Worker = {
       val worker = new MockWorker(onDone, onFailure)
       workers = workers + (taskId -> worker)
       worker

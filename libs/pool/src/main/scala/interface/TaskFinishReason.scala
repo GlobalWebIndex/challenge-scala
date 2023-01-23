@@ -7,11 +7,11 @@ trait TaskFinishReason
 object TaskFinishReason {
 
   /** Task finished normally */
-  object Done extends TaskFinishReason
+  case object Done extends TaskFinishReason
 
   /** Task was cancelled */
-  object Cancelled extends TaskFinishReason
+  case object Cancelled extends TaskFinishReason
 
   /** Task encountered an error */
-  object Failed extends TaskFinishReason
+  case object Failed extends TaskFinishReason
 }
