@@ -135,7 +135,7 @@ object WorkerFactory {
         )
         .to(Sink.ignore)
 
-    private val actor = source.alsoToMat(counter)(Keep.right).to(result).run()
+    private val actor = source.alsoTo(result).runWith(counter)
 
     def cancel(onCancel: Long => Unit): Unit = actor ! Message.Cancel(onCancel)
     def currentCount(onCount: Long => Unit): Unit =
