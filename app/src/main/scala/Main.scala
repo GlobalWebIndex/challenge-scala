@@ -6,6 +6,7 @@ import conversion.FileSaver
 import conversion.HttpConversion
 import conversion.UUIDNamer
 import models.TaskId
+import org.slf4j.LoggerFactory
 import pool.WorkerFactory
 import pool.WorkerPool
 import pool.dependencies.Config
@@ -38,17 +39,15 @@ object Main {
       config: TSConfig
   )(implicit actorContext: ActorContext[_]): Route = {
     implicit val ec = actorContext.executionContext
-    val log = actorContext.log
-
     val saver =
       new FileSaver(
-        log,
+        LoggerFactory.getLogger("FileSaver"),
         Paths.get(config.getString("csvToJson.resultDirectory"))
       )
     val conversionPool =
       WorkerPool(
         Config.fromConf(config.getConfig("pool")),
-        log,
+        LoggerFactory.getLogger("ConversionPool"),
         WorkerFactory(HttpConversion, saver),
         saver,
         UUIDNamer,
@@ -57,7 +56,11 @@ object Main {
 
     val checkController = new CheckController(actorContext.log)
     val csvToJsonController =
-      new CsvToJsonController(config, log, conversionPool)
+      new CsvToJsonController(
+        config,
+        LoggerFactory.getLogger("CsvToJsonController"),
+        conversionPool
+      )
 
     concat(
       (get & path("check")) {

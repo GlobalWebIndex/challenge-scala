@@ -143,53 +143,44 @@ object WorkerPool {
       private def behavior(
           state: PoolState[ID, IN, OUT]
       )(implicit timeout: Timeout): Behavior[Message[ID, IN, OUT]] =
-        Behaviors.receive((context, message) =>
-          message match {
+        Behaviors.receiveMessage { message =>
+          val newStateOpt = message match {
             case Message.Public(message) =>
               message match {
                 case PoolMessage.CreateTask(taskId, url, result, replyTo) =>
                   val (taskInfo, newState) = state.addTask(taskId, url, result)
                   replyTo ! taskInfo
-                  behavior(newState)
+                  Some(newState)
                 case PoolMessage.ListTasks(replyTo) =>
                   replyTo ! state.listTasks()
-                  Behaviors.same
+                  None
                 case PoolMessage.GetTask(taskId, replyTo) =>
-                  val (response, newStateOpt) =
+                  val (response, newState) =
                     state.getTask(taskId, replyTo ! Some(_))
                   if (!response) replyTo ! None
-                  newStateOpt match {
-                    case None           => Behaviors.same
-                    case Some(newState) => behavior(newState)
-                  }
+                  newState
                 case PoolMessage.CancelTask(taskId, replyTo) =>
-                  val (response, newStateOpt) = state.cancelTask(
+                  val (response, newState) = state.cancelTask(
                     taskId,
                     replyTo ! Some(_)
                   )
                   if (!response) replyTo ! None
-                  newStateOpt match {
-                    case None           => Behaviors.same
-                    case Some(newState) => behavior(newState)
-                  }
+                  newState
               }
             case Message.TaskFinished(taskId, totalCount, reason) =>
               log.debug(
                 s"Task $taskId is over — $totalCount items processed, final result: ${reason.getClass().getSimpleName()}"
               )
-              state.finishTask(taskId, totalCount, reason) match {
-                case None => Behaviors.same
-                case Some((result, newState)) =>
+              state.finishTask(taskId, totalCount, reason).map {
+                case (result, newState) =>
                   saver.unmake(result, reason)
-                  behavior(newState)
+                  newState
               }
             case Message.TaskCounted(taskId, count) =>
               log.debug(s"Task $taskId has processed $count items")
-              state.taskCounted(taskId, count) match {
-                case None           => Behaviors.same
-                case Some(newState) => behavior(state)
-              }
+              state.taskCounted(taskId, count)
           }
-        )
+          newStateOpt.map(behavior).getOrElse(Behaviors.same)
+        }
     }
 }
