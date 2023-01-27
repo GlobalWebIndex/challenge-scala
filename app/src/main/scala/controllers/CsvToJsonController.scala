@@ -1,6 +1,8 @@
 package controllers
 
 import com.typesafe.config.Config
+import conversion.FileDestination
+import conversion.HttpConversion
 import de.heikoseeberger.akkahttpcirce.FailFastCirceSupport
 import io.circe.Printer
 import io.circe.syntax._
@@ -12,6 +14,7 @@ import pool.interface.TaskFinishReason
 import pool.interface.TaskInfo
 
 import akka.NotUsed
+import akka.actor.typed.ActorSystem
 import akka.http.scaladsl.model.ContentTypes
 import akka.http.scaladsl.model.HttpEntity
 import akka.http.scaladsl.model.MediaTypes
@@ -26,7 +29,6 @@ import akka.stream.scaladsl.Source
 import akka.util.ByteString
 
 import java.nio.file.Files
-import java.nio.file.Path
 import scala.concurrent.ExecutionContext
 import scala.concurrent.duration.Duration
 import scala.concurrent.duration.FiniteDuration
@@ -34,8 +36,9 @@ import scala.concurrent.duration.FiniteDuration
 class CsvToJsonController(
     config: Config,
     log: Logger,
-    workerPool: WorkerPool[TaskId, Uri, Path]
-) extends FailFastCirceSupport {
+    workerPool: WorkerPool[TaskId, Source[ByteString, _], FileDestination]
+)(implicit system: ActorSystem[_])
+    extends FailFastCirceSupport {
   private implicit val printer = Printer(dropNullValues = true, indent = "")
 
   private val pollingPeriod: FiniteDuration =
@@ -43,7 +46,7 @@ class CsvToJsonController(
 
   def createTask(uri: Uri)(implicit ec: ExecutionContext): Route = {
     log.debug(s"Creating a task to convert csv from $uri")
-    onSuccess(workerPool.createTask(uri)) {
+    onSuccess(workerPool.createTask(HttpConversion.make(uri))) {
       case None =>
         complete(StatusCodes.BadRequest, HttpEntity("Can't create new tasks"))
       case Some(taskInfo) =>
@@ -109,8 +112,8 @@ class CsvToJsonController(
               ),
               HttpEntity(
                 MediaTypes.`application/json`,
-                Files.size(result),
-                FileIO.fromPath(result)
+                Files.size(result.file),
+                FileIO.fromPath(result.file)
               )
             )
           case _ =>
@@ -123,7 +126,7 @@ class CsvToJsonController(
   }
 
   private def taskDetailsStream(
-      taskInfo: TaskInfo[TaskId, Path],
+      taskInfo: TaskInfo[TaskId, _],
       resultUrl: TaskId => String
   ): Source[String, _] =
     Source

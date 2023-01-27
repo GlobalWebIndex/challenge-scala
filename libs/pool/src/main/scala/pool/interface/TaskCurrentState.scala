@@ -16,14 +16,14 @@ object TaskCurrentState {
     *
     * @param at
     *   Timestamp (in milliseconds) of the time the task stopped
-    * @param result
-    *   Address of the output, e.g., filename
+    * @param destination
+    *   Task destination
     * @param reason
     *   The reason why the task stopped
     */
   final case class Finished[OUT](
       at: Long,
-      result: OUT,
+      destination: OUT,
       reason: TaskFinishReason
   ) extends TaskCurrentState[OUT]
 }

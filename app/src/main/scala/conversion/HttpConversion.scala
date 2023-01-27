@@ -2,7 +2,6 @@ package conversion
 
 import io.circe.Encoder._
 import io.circe.syntax._
-import pool.dependencies.Fetch
 
 import akka.actor.typed.ActorSystem
 import akka.http.scaladsl.Http
@@ -15,7 +14,7 @@ import akka.stream.alpakka.csv.scaladsl.CsvToMap
 import akka.stream.scaladsl.Source
 import akka.util.ByteString
 
-object HttpConversion extends Fetch[Uri, ByteString] {
+object HttpConversion {
   def make(url: Uri)(implicit as: ActorSystem[_]): Source[ByteString, _] =
     Source
       .futureSource(

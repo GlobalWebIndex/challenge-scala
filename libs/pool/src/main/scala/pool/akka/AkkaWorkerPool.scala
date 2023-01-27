@@ -1,15 +1,17 @@
-package pool
+package pool.akka
 
 import org.slf4j.Logger
 import pool.WorkerFactory
+import pool.WorkerPool
+import pool.akka.internal.PoolMessage
+import pool.akka.internal.PoolState
 import pool.dependencies.Config
+import pool.dependencies.Destination
 import pool.dependencies.Namer
 import pool.dependencies.Saver
 import pool.interface.TaskFinishReason
 import pool.interface.TaskInfo
 import pool.interface.TaskShortInfo
-import pool.internal.PoolMessage
-import pool.internal.PoolState
 
 import akka.Done
 import akka.actor.typed.Behavior
@@ -20,58 +22,8 @@ import akka.util.Timeout
 
 import scala.concurrent.Future
 
-/** Schedules the tasks.
-  *
-  * Each task copies a stream of items from a given source to a given
-  * destination
-  * @tparam ID
-  *   Unique task identifiers
-  * @tparam IN
-  *   Source address, such as URL
-  * @tparam OUT
-  *   Destination address, such as filename
-  */
-trait WorkerPool[ID, IN, OUT] {
-
-  /** Adds a task to the pool
-    * @param url
-    *   Source address
-    * @return
-    *   Information about the added task, including it's identifier
-    */
-  def createTask(url: IN): Future[Option[TaskInfo[ID, OUT]]]
-
-  /** Lists all added tasks
-    *
-    * @return
-    *   Abbreviated information about all the tasks
-    */
-  def listTasks: Future[Seq[TaskShortInfo[ID]]]
-
-  /** Provides streaming information about the specified task
-    *
-    * @param taskId
-    *   Task identifier
-    * @return
-    *   Information about that task, if it exists
-    */
-  def getTask(taskId: ID): Future[Option[TaskInfo[ID, OUT]]]
-
-  /** Cancels, but not removes, the task from the pool
-    *
-    * @param taskId
-    *   Task identifier
-    * @return
-    *   The number of processed items, if the task exists
-    */
-  def cancelTask(taskId: ID): Future[Option[Long]]
-
-  /** Cancels all tasks and prevents new ones from being created */
-  def cancelAll(): Future[Done]
-}
-
 /** Factory for [[WorkerPool]] */
-object WorkerPool {
+object AkkaWorkerPool {
   private sealed trait Message[ID, IN, OUT]
   private object Message {
     final case class Public[ID, IN, OUT](
@@ -93,7 +45,7 @@ object WorkerPool {
     * @param log
     *   Logger to use for debugging purposes
     * @param workerFactory
-    *   Factory for creating new workers — normally [[WorkerFactory.apply]]
+    *   Factory for creating new workers — normally [[AkkaWorkerFactory.apply]]
     *   should be enough
     * @param saver
     *   Utilities for dealing with destinations
@@ -104,11 +56,11 @@ object WorkerPool {
     * @return
     *   The newly created [[WorkerPool]]
     */
-  def apply[ID, IN, OUT, ITEM](
+  def apply[ID, IN, OUT <: Destination[_]](
       config: Config,
       log: Logger,
-      workerFactory: WorkerFactory[ID, IN, OUT],
-      saver: Saver[ID, OUT, ITEM],
+      workerFactory: WorkerFactory[IN, OUT],
+      saver: Saver[ID, OUT],
       namer: Namer[ID],
       actorName: String
   )(implicit ctx: ActorContext[_]): WorkerPool[ID, IN, OUT] =
@@ -133,9 +85,16 @@ object WorkerPool {
         actorName
       )
 
-      def createTask(url: IN): Future[Option[TaskInfo[ID, OUT]]] = {
+      def createTask(source: => IN): Future[Option[TaskInfo[ID, OUT]]] = {
         val taskId = namer.makeTaskId()
-        actor.ask(PoolMessage.CreateTask(taskId, url, saver.target(taskId), _))
+        actor.ask(
+          PoolMessage.CreateTask(
+            taskId,
+            () => source,
+            saver.make(taskId),
+            _
+          )
+        )
       }
       def listTasks: Future[Seq[TaskShortInfo[ID]]] =
         actor.ask(PoolMessage.ListTasks(_))
@@ -143,7 +102,7 @@ object WorkerPool {
         actor.ask(PoolMessage.GetTask(taskId, _))
       def cancelTask(taskId: ID): Future[Option[Long]] =
         actor.ask(PoolMessage.CancelTask(taskId, _))
-      def cancelAll(): Future[Done] = actor.ask(PoolMessage.CancelAll(_))
+      def cancelAll(): Future[Unit] = actor.ask(PoolMessage.CancelAll(_))
 
       private def behavior(
           state: PoolState[ID, IN, OUT]
@@ -152,8 +111,13 @@ object WorkerPool {
           val newStateOpt = message match {
             case Message.Public(message) =>
               message match {
-                case PoolMessage.CreateTask(taskId, url, result, replyTo) =>
-                  val added = state.addTask(taskId, url, result)
+                case PoolMessage.CreateTask(
+                      taskId,
+                      source,
+                      destination,
+                      replyTo
+                    ) =>
+                  val added = state.addTask(taskId, source, destination)
                   replyTo ! added.map(_._1)
                   added.map(_._2)
                 case PoolMessage.ListTasks(replyTo) =>
@@ -178,9 +142,10 @@ object WorkerPool {
                 s"Task $taskId is over — $totalCount items processed, final result: $reason"
               )
               state.finishTask(taskId, totalCount, reason).map {
-                case (result, newTaskId, newState) =>
-                  log.debug(s"Starting scheduled task $newTaskId")
-                  saver.unmake(result, reason)
+                case (newTaskId, newState) =>
+                  newTaskId.foreach(taskId =>
+                    log.debug(s"Starting scheduled task $taskId")
+                  )
                   newState
               }
             case Message.TaskCounted(taskId, count) =>

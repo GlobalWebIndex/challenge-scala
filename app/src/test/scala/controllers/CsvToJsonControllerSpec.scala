@@ -2,6 +2,7 @@ package controllers
 
 import com.typesafe.config.Config
 import com.typesafe.config.ConfigFactory
+import conversion.FileDestination
 import de.heikoseeberger.akkahttpcirce.FailFastCirceSupport
 import io.circe.Json
 import io.circe.parser._
@@ -18,15 +19,18 @@ import pool.interface.TaskInfo
 import pool.interface.TaskShortInfo
 import pool.interface.TaskState
 
-import akka.Done
+import akka.actor.testkit.typed.scaladsl.ActorTestKit
+import akka.actor.typed.ActorSystem
 import akka.http.scaladsl.model.ContentTypes
 import akka.http.scaladsl.model.StatusCodes
 import akka.http.scaladsl.model.Uri
 import akka.http.scaladsl.testkit.ScalatestRouteTest
 import akka.http.scaladsl.unmarshalling.Unmarshaller._
 import akka.stream.scaladsl.Sink
+import akka.stream.scaladsl.Source
+import akka.util.ByteString
 
-import java.nio.file.Path
+import java.nio.file.Paths
 import scala.concurrent.Future
 
 class CsvToJsonControllerSpec
@@ -35,22 +39,31 @@ class CsvToJsonControllerSpec
     with ScalatestRouteTest
     with ScalaFutures
     with FailFastCirceSupport {
+  val testKit: ActorTestKit = ActorTestKit()
+  implicit val actorSystem: ActorSystem[_] = testKit.internalSystem
+  override protected def afterAll(): Unit = testKit.shutdownTestKit()
+
   val config: Config =
     ConfigFactory.parseString("csvToJson.pollingPeriodMillis = 1")
   val log: Logger = LoggerFactory.getLogger("CsvToJsonControllerSpec")
-  def pool: WorkerPool[TaskId, Uri, Path] = new WorkerPool[TaskId, Uri, Path] {
+  def pool(success: Boolean = true): pool =
+    new pool(success)
+  class pool(success: Boolean = true)
+      extends WorkerPool[TaskId, Source[ByteString, _], FileDestination] {
     val startTime = System.currentTimeMillis
     var getTaskCallCount = 0
-    def createTask(url: Uri): Future[Option[TaskInfo[TaskId, Path]]] =
+    def createTask(
+        source: => Source[ByteString, _]
+    ): Future[Option[TaskInfo[TaskId, FileDestination]]] =
       Future.successful(
         Some(
-          TaskInfo[TaskId, Path](
+          TaskInfo[TaskId, FileDestination](
             TaskId("CreatedTaskId"),
             0,
             0,
             TaskCurrentState.Scheduled()
           )
-        ).filter(_ => url.authority.host.toString != "fail.com")
+        ).filter(_ => success)
       )
     def listTasks: Future[Seq[TaskShortInfo[TaskId]]] =
       Future.successful(
@@ -63,7 +76,7 @@ class CsvToJsonControllerSpec
       )
     def getTask(
         taskId: TaskId
-    ): Future[Option[TaskInfo[TaskId, Path]]] = if (
+    ): Future[Option[TaskInfo[TaskId, FileDestination]]] = if (
       List("TaskA", "TaskB", "TaskC", "TaskD").contains(taskId.id)
     ) {
       getTaskCallCount = getTaskCallCount + 1
@@ -83,7 +96,7 @@ class CsvToJsonControllerSpec
               startTime,
               TaskCurrentState.Finished(
                 System.currentTimeMillis(),
-                Path.of(taskId.id),
+                new FileDestination(log, Paths.get("fake"), taskId),
                 TaskFinishReason.Done
               )
             )
@@ -96,12 +109,12 @@ class CsvToJsonControllerSpec
           List("TaskA", "TaskB", "TaskC", "TaskD").contains(taskId.id)
         )
       )
-    def cancelAll(): Future[Done] = Future.successful(Done)
+    def cancelAll(): Future[Unit] = Future.successful(())
   }
 
   "CsvToJsonController" should {
     "create task" in {
-      val controller = new CsvToJsonController(config, log, pool)
+      val controller = new CsvToJsonController(config, log, pool())
       Post() ~> controller.createTask(Uri("http://example.com/")) ~> check {
         status shouldBe StatusCodes.OK
         contentType shouldBe ContentTypes.`text/plain(UTF-8)`
@@ -109,13 +122,13 @@ class CsvToJsonControllerSpec
       }
     }
     "report failure to create task" in {
-      val controller = new CsvToJsonController(config, log, pool)
+      val controller = new CsvToJsonController(config, log, pool(false))
       Post() ~> controller.createTask(Uri("http://fail.com/")) ~> check {
         status shouldBe StatusCodes.BadRequest
       }
     }
     "list tasks" in {
-      val controller = new CsvToJsonController(config, log, pool)
+      val controller = new CsvToJsonController(config, log, pool())
       Get() ~> controller.listTasks(_.id) ~> check {
         status shouldBe StatusCodes.OK
         contentType shouldBe ContentTypes.`application/json`
@@ -131,7 +144,7 @@ class CsvToJsonControllerSpec
       }
     }
     "get task details" in {
-      val controller = new CsvToJsonController(config, log, pool)
+      val controller = new CsvToJsonController(config, log, pool())
       Get() ~> controller.taskDetails(TaskId("TaskA"), _.id) ~> check {
         status shouldBe StatusCodes.OK
         contentType shouldBe ContentTypes.`text/plain(UTF-8)`
@@ -154,25 +167,25 @@ class CsvToJsonControllerSpec
       }
     }
     "report failure to get missing task details" in {
-      val controller = new CsvToJsonController(config, log, pool)
+      val controller = new CsvToJsonController(config, log, pool())
       Get() ~> controller.taskDetails(TaskId("FakeTask"), _.id) ~> check {
         status shouldBe StatusCodes.NotFound
       }
     }
     "cancel existing task" in {
-      val controller = new CsvToJsonController(config, log, pool)
+      val controller = new CsvToJsonController(config, log, pool())
       Delete() ~> controller.cancelTask(TaskId("TaskA")) ~> check {
         status shouldBe StatusCodes.OK
       }
     }
     "report cancelling finished task" in {
-      val controller = new CsvToJsonController(config, log, pool)
+      val controller = new CsvToJsonController(config, log, pool())
       Delete() ~> controller.cancelTask(TaskId("TaskD")) ~> check {
         status shouldBe StatusCodes.OK
       }
     }
     "report failure to cancel non-existent task" in {
-      val controller = new CsvToJsonController(config, log, pool)
+      val controller = new CsvToJsonController(config, log, pool())
       Delete() ~> controller.cancelTask(TaskId("FakeTask")) ~> check {
         status shouldBe StatusCodes.NotFound
       }

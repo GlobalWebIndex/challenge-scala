@@ -2,13 +2,14 @@ import com.typesafe.config.ConfigFactory
 import com.typesafe.config.{Config => TSConfig}
 import controllers.CheckController
 import controllers.CsvToJsonController
+import conversion.FileDestination
 import conversion.FileSaver
-import conversion.HttpConversion
 import conversion.UUIDNamer
 import models.TaskId
 import org.slf4j.LoggerFactory
-import pool.WorkerFactory
 import pool.WorkerPool
+import pool.akka.AkkaWorkerFactory
+import pool.akka.AkkaWorkerPool
 import pool.dependencies.Config
 
 import akka.Done
@@ -22,9 +23,10 @@ import akka.http.scaladsl.model.Uri
 import akka.http.scaladsl.server.Directives._
 import akka.http.scaladsl.server.Route
 import akka.http.scaladsl.unmarshalling.FromRequestUnmarshaller
+import akka.stream.scaladsl.Source
+import akka.util.ByteString
 import akka.util.Timeout
 
-import java.nio.file.Path
 import java.nio.file.Paths
 import scala.concurrent.Await
 import scala.concurrent.duration.Duration
@@ -46,7 +48,10 @@ object Main {
       config: TSConfig
   )(implicit
       actorContext: ActorContext[_]
-  ): (WorkerPool[TaskId, Uri, Path], Route) = {
+  ): (
+      WorkerPool[TaskId, Source[ByteString, _], FileDestination],
+      Route
+  ) = {
     implicit val ec = actorContext.executionContext
     implicit val actorSystem = actorContext.system
     val saver =
@@ -55,10 +60,10 @@ object Main {
         Paths.get(config.getString("csvToJson.resultDirectory"))
       )
     val conversionPool =
-      WorkerPool(
+      AkkaWorkerPool(
         Config.fromConf(config.getConfig("pool")),
         LoggerFactory.getLogger("ConversionPool"),
-        WorkerFactory(HttpConversion, saver),
+        AkkaWorkerFactory[ByteString, FileDestination],
         saver,
         UUIDNamer,
         "conversionPool"

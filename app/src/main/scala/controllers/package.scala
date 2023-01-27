@@ -7,8 +7,6 @@ import pool.interface.TaskInfo
 import pool.interface.TaskShortInfo
 import pool.interface.TaskState
 
-import java.nio.file.Path
-
 package object controllers {
   def taskShortInfoToDetails(
       info: TaskShortInfo[TaskId],
@@ -24,7 +22,7 @@ package object controllers {
     )
   }
   def taskInfoToDetails(
-      info: TaskInfo[TaskId, Path],
+      info: TaskInfo[TaskId, _],
       resultUrl: TaskId => String
   ): TaskDetails = {
     val lastTime = info.state match {

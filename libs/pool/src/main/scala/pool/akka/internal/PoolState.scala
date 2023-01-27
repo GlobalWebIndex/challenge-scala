@@ -1,18 +1,23 @@
-package pool.internal
+package pool.akka.internal
 
 import pool.WorkerFactory
+import pool.akka.internal.TaskRunState
+import pool.dependencies.Destination
 import pool.interface.TaskCurrentState
 import pool.interface.TaskFinishReason
 import pool.interface.TaskInfo
 import pool.interface.TaskShortInfo
 import pool.interface.TaskState
-import pool.internal.TaskRunState
 
 object PoolState {
-  final case class QueuedTask[ID, IN, OUT](taskId: ID, url: IN, result: OUT)
-  def apply[ID, IN, OUT](
+  final case class QueuedTask[ID, IN, OUT](
+      taskId: ID,
+      source: () => IN,
+      destination: OUT
+  )
+  def apply[ID, IN, OUT <: Destination[_]](
       concurrency: Int,
-      workerFactory: WorkerFactory[ID, IN, OUT],
+      workerFactory: WorkerFactory[IN, OUT],
       reportFinish: (ID, Long, TaskFinishReason) => Unit,
       reportCount: (ID, Long) => Unit
   ): PoolState[ID, IN, OUT] =
@@ -28,37 +33,36 @@ object PoolState {
     )
 }
 
-final case class PoolState[ID, IN, OUT](
+final case class PoolState[ID, IN, OUT <: Destination[_]](
     concurrency: Int,
-    workerFactory: WorkerFactory[ID, IN, OUT],
+    workerFactory: WorkerFactory[IN, OUT],
     reportFinish: (ID, Long, TaskFinishReason) => Unit,
     reportCount: (ID, Long) => Unit,
     stopRequest: Option[() => Unit],
     running: Int,
     queue: Vector[PoolState.QueuedTask[ID, IN, OUT]],
-    tasks: Map[ID, TaskRunState[IN, OUT]]
+    tasks: Map[ID, TaskRunState[OUT]]
 ) {
   private def createWorker(
       taskId: ID,
       runningSince: Long,
-      url: IN,
-      result: OUT
-  ) = (taskId -> TaskRunState.Running[IN, OUT](
+      source: IN,
+      destination: OUT
+  ) = (taskId -> TaskRunState.Running[OUT](
     runningSince,
     workerFactory.createWorker(
-      taskId,
-      url,
-      result,
+      source,
+      destination,
       reportFinish(taskId, _, TaskFinishReason.Done),
       reportFinish(taskId, _, TaskFinishReason.Failed)
     ),
-    result,
+    destination,
     Vector.empty
   ))
   def addTask(
       taskId: ID,
-      url: IN,
-      result: OUT
+      source: () => IN,
+      destination: OUT
   ): Option[(TaskInfo[ID, OUT], PoolState[ID, IN, OUT])] =
     if (stopRequest.isDefined) None
     else
@@ -69,15 +73,16 @@ final case class PoolState[ID, IN, OUT](
             TaskInfo(taskId, 0, time, TaskCurrentState.Running()),
             copy(
               running = running + 1,
-              tasks = tasks + createWorker(taskId, time, url, result)
+              tasks = tasks + createWorker(taskId, time, source(), destination)
             )
           )
         } else {
           (
             TaskInfo(taskId, 0, 0, TaskCurrentState.Scheduled()),
             copy(
-              queue = queue :+ PoolState.QueuedTask(taskId, url, result),
-              tasks = tasks + (taskId -> TaskRunState.Scheduled(url, result))
+              queue =
+                queue :+ PoolState.QueuedTask(taskId, source, destination),
+              tasks = tasks + (taskId -> TaskRunState.Scheduled(destination))
             )
           )
         }
@@ -88,12 +93,12 @@ final case class PoolState[ID, IN, OUT](
   ): (Boolean, Option[PoolState[ID, IN, OUT]]) = {
     val task = tasks.get(taskId)
     val newState = task.flatMap {
-      case TaskRunState.Scheduled(_, _) =>
+      case TaskRunState.Scheduled(_) =>
         onTaskInfo(TaskInfo(taskId, 0, 0, TaskCurrentState.Scheduled()))
         None
       case r @ TaskRunState.Running(_, _, _, _) =>
         r.worker.currentCount(reportCount(taskId, _))
-        val newTaskState = r.copy[IN, OUT](countingRequests =
+        val newTaskState = r.copy[OUT](countingRequests =
           r.countingRequests :+ (count =>
             onTaskInfo(
               TaskInfo(
@@ -112,7 +117,7 @@ final case class PoolState[ID, IN, OUT](
             taskId,
             f.linesProcessed,
             f.runningSince,
-            TaskCurrentState.Finished(f.finishedAt, f.result, f.reason)
+            TaskCurrentState.Finished(f.finishedAt, f.destination, f.reason)
           )
         )
         None
@@ -122,7 +127,7 @@ final case class PoolState[ID, IN, OUT](
   def listTasks(): Seq[TaskShortInfo[ID]] = tasks.toSeq.map {
     case (taskId, state) =>
       state match {
-        case TaskRunState.Scheduled(_, _) =>
+        case TaskRunState.Scheduled(_) =>
           TaskShortInfo(taskId, TaskState.SCHEDULED)
         case TaskRunState.Running(_, _, _, _) =>
           TaskShortInfo(taskId, TaskState.RUNNING)
@@ -147,18 +152,18 @@ final case class PoolState[ID, IN, OUT](
         r.worker.cancel(reportFinish(taskId, _, TaskFinishReason.Cancelled))
         Some(
           copy(tasks =
-            tasks + (taskId -> r.copy[IN, OUT](
+            tasks + (taskId -> r.copy[OUT](
               countingRequests = r.countingRequests :+ reply
             ))
           )
         )
-      case TaskRunState.Scheduled(_, result) =>
+      case TaskRunState.Scheduled(destination) =>
         reply(0)
         Some(
           copy(
             queue = queue.filterNot(_.taskId == taskId),
             tasks = tasks + (taskId -> TaskRunState
-              .Finished[IN, OUT](0, 0, 0, result, TaskFinishReason.Cancelled))
+              .Finished[OUT](0, 0, 0, destination, TaskFinishReason.Cancelled))
           )
         )
       case TaskRunState.Finished(_, _, linesProcessed, _, _) =>
@@ -183,8 +188,14 @@ final case class PoolState[ID, IN, OUT](
             case r @ TaskRunState.Running(_, worker, _, _) =>
               worker.cancel(reportFinish(taskId, _, TaskFinishReason.Cancelled))
               r
-            case TaskRunState.Scheduled(_, result) =>
-              TaskRunState.Finished(0, 0, 0, result, TaskFinishReason.Cancelled)
+            case TaskRunState.Scheduled(destination) =>
+              TaskRunState.Finished(
+                0,
+                0,
+                0,
+                destination,
+                TaskFinishReason.Cancelled
+              )
             case f @ TaskRunState.Finished(_, _, _, _, _) => f
           }
         )
@@ -194,14 +205,14 @@ final case class PoolState[ID, IN, OUT](
       taskId: ID,
       totalCount: Long,
       reason: TaskFinishReason
-  ): Option[(OUT, Option[ID], PoolState[ID, IN, OUT])] =
+  ): Option[(Option[ID], PoolState[ID, IN, OUT])] =
     tasks.get(taskId) flatMap {
       case r @ TaskRunState.Running(_, _, _, _) =>
-        val newTaskState = TaskRunState.Finished[IN, OUT](
+        val newTaskState = TaskRunState.Finished[OUT](
           r.runningSince,
           System.currentTimeMillis,
           totalCount,
-          r.result,
+          r.destination,
           reason
         )
         r.countingRequests.foreach(_(totalCount))
@@ -217,12 +228,13 @@ final case class PoolState[ID, IN, OUT](
               tasks = newTasks + createWorker(
                 task.taskId,
                 System.currentTimeMillis,
-                task.url,
-                task.result
+                task.source(),
+                task.destination
               )
             )
         }
-        Some((r.result, queueHead.map(_.taskId), newState))
+        r.destination.finalize(reason)
+        Some((queueHead.map(_.taskId), newState))
       case _ => None
     }
   def taskCounted(taskId: ID, count: Long): Option[PoolState[ID, IN, OUT]] =

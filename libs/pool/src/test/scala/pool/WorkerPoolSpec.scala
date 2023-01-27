@@ -5,9 +5,10 @@ import org.scalatest.concurrent.ScalaFutures
 import org.scalatest.wordspec.AnyWordSpecLike
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
-import pool.WorkerFactory
+import pool.akka.AkkaWorkerFactory
+import pool.akka.AkkaWorkerPool
 import pool.dependencies.Config
-import pool.dependencies.Fetch
+import pool.dependencies.Destination
 import pool.dependencies.Namer
 import pool.dependencies.Saver
 import pool.interface.TaskCurrentState
@@ -15,14 +16,13 @@ import pool.interface.TaskFinishReason
 import pool.interface.TaskShortInfo
 import pool.interface.TaskState
 
-import akka.actor.testkit.typed.scaladsl.ScalaTestWithActorTestKit
-import akka.actor.typed.ActorRef
-import akka.actor.typed.ActorSystem
-import akka.actor.typed.Behavior
-import akka.actor.typed.scaladsl.ActorContext
-import akka.actor.typed.scaladsl.Behaviors
-import akka.stream.scaladsl.Sink
-import akka.stream.scaladsl.Source
+import _root_.akka.actor.testkit.typed.scaladsl.ScalaTestWithActorTestKit
+import _root_.akka.actor.typed.ActorRef
+import _root_.akka.actor.typed.Behavior
+import _root_.akka.actor.typed.scaladsl.ActorContext
+import _root_.akka.actor.typed.scaladsl.Behaviors
+import _root_.akka.stream.scaladsl.Sink
+import _root_.akka.stream.scaladsl.Source
 
 import scala.concurrent.duration.Duration
 import scala.util.Try
@@ -45,15 +45,13 @@ class WorkerPoolSpec
   val log: Logger = LoggerFactory.getLogger("WorkerPoolSpec")
   def poolMock(name: String, mockFactory: MockFactory = new MockFactory)(
       implicit ctx: ActorContext[_]
-  ): WorkerPool[Long, Unit, String] =
-    WorkerPool(config, log, mockFactory, new MockSaver, new MockNamer, name)
-  def poolReal(
-      name: String,
-      elements: () => Source[Int, _],
-      saver: MockSaver
-  )(implicit ctx: ActorContext[_]): WorkerPool[Long, String, String] = {
-    val factory = WorkerFactory(new MockFetch(elements), saver)
-    WorkerPool(config, log, factory, saver, new MockNamer, name)
+  ): WorkerPool[Long, Unit, Destination[Sink[Int, _]]] =
+    AkkaWorkerPool(config, log, mockFactory, new MockSaver, new MockNamer, name)
+  def poolReal(name: String, saver: MockSaver)(implicit
+      ctx: ActorContext[_]
+  ): WorkerPool[Long, Source[Int, _], Destination[Sink[Int, _]]] = {
+    val factory = AkkaWorkerFactory[Int, Destination[Sink[Int, _]]]
+    AkkaWorkerPool(config, log, factory, saver, new MockNamer, name)
   }
 
   "WorkerPool with fake factory" should {
@@ -101,7 +99,7 @@ class WorkerPoolSpec
       val creatingFuture = for {
         firstTask <- pool.createTask(())
         _ <- pool.createTask(())
-        _ = factory.workers.get(firstTask.get.taskId).get.finish()
+        _ = factory.workers(0).finish()
         thirdTask <- pool.createTask(())
       } yield thirdTask
       whenReady(creatingFuture) {
@@ -118,8 +116,8 @@ class WorkerPoolSpec
         firstTask <- pool.createTask(())
         secondTask <- pool.createTask(())
         _ <- pool.createTask(())
-        _ = factory.workers.get(firstTask.get.taskId).get.finish()
-        _ = factory.workers.get(secondTask.get.taskId).get.fail()
+        _ = factory.workers(0).finish()
+        _ = factory.workers(1).fail()
         list <- pool.listTasks
       } yield list
       whenReady(creatingFuture) { list =>
@@ -136,7 +134,7 @@ class WorkerPoolSpec
       val pool = poolMock("taskDetails", factory)
       val creatingFuture = for {
         task <- pool.createTask(())
-        _ = factory.workers.get(task.get.taskId).get.processed = 1000
+        _ = factory.workers(0).processed = 1000
         details <- pool.getTask(task.get.taskId)
       } yield details
       whenReady(creatingFuture) { details =>
@@ -150,7 +148,7 @@ class WorkerPoolSpec
       val pool = poolMock("finishedDetails", factory)
       val creatingFuture = for {
         task <- pool.createTask(())
-        _ = factory.workers.get(task.get.taskId).get.finish()
+        _ = factory.workers(0).finish()
         details <- pool.getTask(task.get.taskId)
       } yield details
       whenReady(creatingFuture) { details =>
@@ -170,7 +168,7 @@ class WorkerPoolSpec
       val pool = poolMock("failedDetails", factory)
       val creatingFuture = for {
         task <- pool.createTask(())
-        _ = factory.workers.get(task.get.taskId).get.fail()
+        _ = factory.workers(0).fail()
         details <- pool.getTask(task.get.taskId)
       } yield details
       whenReady(creatingFuture) { details =>
@@ -213,7 +211,7 @@ class WorkerPoolSpec
           firstTask <- pool.createTask(())
           _ <- pool.createTask(())
           thirdTask <- pool.createTask(())
-          _ = factory.workers.get(firstTask.get.taskId).get.finish()
+          _ = factory.workers(0).finish()
           details <- pool.getTask(thirdTask.get.taskId)
         } yield details
         whenReady(creatingFuture) { details =>
@@ -250,9 +248,9 @@ class WorkerPoolSpec
     "process the elements correctly" in runWithContext { implicit ctx =>
       implicit val ec = ctx.executionContext
       val saver = new MockSaver
-      val pool = poolReal("processElements", () => Source(List(1, 2, 3)), saver)
+      val pool = poolReal("processElements", saver)
       val creatingFuture = for {
-        task <- pool.createTask("TestTask")
+        task <- pool.createTask(Source(List(1, 2, 3)))
         _ = Thread.sleep(100)
         details <- pool.getTask(task.get.taskId)
       } yield details
@@ -260,26 +258,25 @@ class WorkerPoolSpec
         (for {
           d <- details
           finished <- d.state match {
-            case TaskCurrentState.Finished(_, result, reason) =>
-              Some(d.taskId, result, reason)
+            case TaskCurrentState.Finished(_, _, reason) =>
+              Some(d.taskId, reason)
             case _ => None
           }
-        } yield finished) shouldBe Some(1, "1", TaskFinishReason.Done)
-        saver.unmade shouldBe List(("1", TaskFinishReason.Done))
-        saver.saved should contain theSameElementsAs Map("1" -> List(1, 2, 3))
+        } yield finished) shouldBe Some(1, TaskFinishReason.Done)
+        saver.unmade shouldBe List((1, TaskFinishReason.Done))
+        saver.saved should contain theSameElementsAs Map(1 -> List(1, 2, 3))
       }
     }
     "handle failure gracefully" in runWithContext { implicit ctx =>
       implicit val ec = ctx.executionContext
       val saver = new MockSaver
       val failingSource =
-        () =>
-          Source(List(1, 2)) ++ Source.lazySource(() =>
-            Source.failed(new Exception("Failure"))
-          )
-      val pool = poolReal("processElements", failingSource, saver)
+        Source(List(1, 2)) ++ Source.lazySource(() =>
+          Source.failed(new Exception("Failure"))
+        )
+      val pool = poolReal("processElements", saver)
       val creatingFuture = for {
-        task <- pool.createTask("TestTask")
+        task <- pool.createTask(failingSource)
         _ = Thread.sleep(100)
         details <- pool.getTask(task.get.taskId)
       } yield details
@@ -287,22 +284,21 @@ class WorkerPoolSpec
         (for {
           d <- details
           finished <- d.state match {
-            case TaskCurrentState.Finished(_, result, reason) =>
-              Some(d.taskId, result, reason)
+            case TaskCurrentState.Finished(_, _, reason) =>
+              Some(d.taskId, reason)
             case _ => None
           }
-        } yield finished) shouldBe Some(1, "1", TaskFinishReason.Failed)
-        saver.unmade shouldBe List(("1", TaskFinishReason.Failed))
-        saver.saved shouldBe Map("1" -> List(1, 2))
+        } yield finished) shouldBe Some(1, TaskFinishReason.Failed)
+        saver.unmade shouldBe List((1, TaskFinishReason.Failed))
+        saver.saved shouldBe Map(1 -> List(1, 2))
       }
     }
     "cancel the task when necessary" in runWithContext { implicit ctx =>
       implicit val ec = ctx.executionContext
       val saver = new MockSaver
-      val failingSource = () => Source(List(1, 2)) ++ Source.never
-      val pool = poolReal("processElements", failingSource, saver)
+      val pool = poolReal("processElements", saver)
       val creatingFuture = for {
-        task <- pool.createTask("TestTask")
+        task <- pool.createTask(Source(List(1, 2)) ++ Source.never)
         _ = Thread.sleep(100)
         _ <- pool.cancelTask(task.get.taskId)
         details <- pool.getTask(task.get.taskId)
@@ -311,35 +307,29 @@ class WorkerPoolSpec
         (for {
           d <- details
           finished <- d.state match {
-            case TaskCurrentState.Finished(_, result, reason) =>
-              Some(d.taskId, result, reason)
+            case TaskCurrentState.Finished(_, _, reason) =>
+              Some(d.taskId, reason)
             case _ => None
           }
-        } yield finished) shouldBe Some(1, "1", TaskFinishReason.Cancelled)
-        saver.unmade shouldBe List(("1", TaskFinishReason.Cancelled))
-        saver.saved shouldBe Map("1" -> List(1, 2))
+        } yield finished) shouldBe Some(1, TaskFinishReason.Cancelled)
+        saver.unmade shouldBe List((1, TaskFinishReason.Cancelled))
+        saver.saved shouldBe Map(1 -> List(1, 2))
       }
     }
   }
 
-  class MockFetch(elements: () => Source[Int, _]) extends Fetch[String, Int] {
-    var requested: Vector[String] = Vector()
-    def make(url: String)(implicit as: ActorSystem[_]): Source[Int, _] = {
-      requested = requested :+ url
-      elements()
-    }
-  }
-  class MockSaver extends Saver[Long, String, Int] {
-    var unmade: Vector[(String, TaskFinishReason)] = Vector.empty
-    var saved: Map[String, Vector[Int]] = Map.empty
-    def make(file: String): Sink[Int, _] =
-      Sink.foreach { n =>
-        val existing = saved.getOrElse(file, Vector.empty)
-        saved = saved + (file -> (existing :+ n))
+  class MockSaver extends Saver[Long, Destination[Sink[Int, _]]] {
+    var unmade: Vector[(Long, TaskFinishReason)] = Vector.empty
+    var saved: Map[Long, Vector[Int]] = Map.empty
+    def make(taskId: Long): Destination[Sink[Int, _]] =
+      new Destination[Sink[Int, _]] {
+        override def sink(): Sink[Int, _] = Sink.foreach { n =>
+          val existing = saved.getOrElse(taskId, Vector.empty)
+          saved = saved + (taskId -> (existing :+ n))
+        }
+        override def finalize(reason: TaskFinishReason): Unit =
+          unmade = unmade :+ (taskId -> reason)
       }
-    def unmake(file: String, reason: TaskFinishReason): Unit =
-      unmade = unmade :+ (file, reason)
-    def target(taskId: Long): String = taskId.toString()
   }
   class MockNamer extends Namer[Long] {
     var nextId: Long = 0
@@ -356,17 +346,16 @@ class WorkerPoolSpec
     def cancel(onCancel: Long => Unit): Unit = onCancel(processed)
     def currentCount(onCount: Long => Unit): Unit = onCount(processed)
   }
-  class MockFactory extends WorkerFactory[Long, Unit, String] {
-    var workers: Map[Long, MockWorker] = Map.empty
-    def createWorker(
-        taskId: Long,
-        url: Unit,
-        result: String,
+  class MockFactory extends WorkerFactory[Unit, Destination[Sink[Int, _]]] {
+    var workers: Vector[MockWorker] = Vector.empty
+    override def createWorker(
+        source: Unit,
+        destination: Destination[Sink[Int, _]],
         onDone: Long => Unit,
         onFailure: Long => Unit
     ): Worker = {
       val worker = new MockWorker(onDone, onFailure)
-      workers = workers + (taskId -> worker)
+      workers = workers :+ worker
       worker
     }
   }
