@@ -1,2 +1,15 @@
+# Compiled class files and target folders
 *.class
+target/
+
+# sbt artifacts that don't need to be versioned
+.bsp/
+
+# Log files
 *.log
+
+# VM crash logs
+hs_err_pid*
+
+# IntelliJ IDEA project (should be always created from sbt anyway)
+.idea/
