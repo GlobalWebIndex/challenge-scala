@@ -7,5 +7,5 @@ ThisBuild / scalaVersion := "2.12.17"
 lazy val root = (project in file("."))
   .settings(
     name := "csvimport",
-    libraryDependencies ++= akkaDependencies
+    libraryDependencies ++= dependencies
   )
