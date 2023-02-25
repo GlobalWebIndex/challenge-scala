@@ -9,23 +9,11 @@ import akka.actor.typed.scaladsl.Behaviors
 private[service] object CsvTask {
   sealed trait CsvTaskCommand
   case class Run(replyTo: ActorRef[CsvDetail]) extends CsvTaskCommand
-  final case class Finish(url: JsonUrl, linesAdded: Long) extends CsvTaskCommand
+  final case class Finish(url: ResultPath, linesAdded: Long) extends CsvTaskCommand
   case object Fail extends CsvTaskCommand
   case object Cancel extends CsvTaskCommand
   final case class ProcessLines(linesAdded: Long) extends CsvTaskCommand
-  final case class StatusReport(replyTo: ActorRef[Either[StatusFailure, CsvTaskStatusReport]]) extends CsvTaskCommand
-
-  case class CsvDetail(url: CsvUrl)
-
-  case class StatusFailure private(reason: String)
-
-  case class CsvTaskStatusReport private[CsvTask] (
-                                                    taskId: TaskId,
-                                                    state: String,
-                                                    linesProcessed: Long,
-                                                    averageLinesProcessed: Float,
-                                                    result: Option[JsonUrl] = None
-                                                  )
+  final case class StatusReport(replyTo: ActorRef[CsvStatusResponse]) extends CsvTaskCommand
 
   private sealed trait CsvTaskState {
     def taskId: TaskId
@@ -46,9 +34,9 @@ private[service] object CsvTask {
     def millisElapsed: Long = System.currentTimeMillis() - millisStarted
     def statusName = "RUNNING"
   }
-  private case class Done(taskId: TaskId, linesProcessed: Long, millisElapsed: Long, url: JsonUrl) extends CsvTaskState {
+  private case class Done(taskId: TaskId, linesProcessed: Long, millisElapsed: Long, result: ResultPath) extends CsvTaskState {
     def statusName = "DONE"
-    override def report: Either[StatusFailure, CsvTaskStatusReport] = super.report.map(_.copy(result = Some(url)))
+    override def report: Either[StatusFailure, CsvTaskStatusReport] = super.report.map(_.copy(result = Some(result)))
   }
   private case class Failed(taskId: TaskId, linesProcessed: Long, millisElapsed: Long) extends CsvTaskState {
     def statusName = "FAILED"

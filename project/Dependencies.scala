@@ -5,6 +5,13 @@ object Dependencies {
   val akkaHttpVersion = "10.2.10"
   val logbackVersion = "1.2.3"
   val scalaTestVersion = "3.1.0"
+  val circeVersion = "0.14.1"
+
+  val circeDependencies: Seq[ModuleID] = Seq(
+    "io.circe" %% "circe-core",
+    "io.circe" %% "circe-generic",
+    "io.circe" %% "circe-parser"
+  ).map(_ % circeVersion)
 
   val akkaActor = "com.typesafe.akka" %% "akka-actor" % akkaVersion
   val akkaActorTyped = "com.typesafe.akka" %% "akka-actor-typed" % akkaVersion
@@ -18,5 +25,5 @@ object Dependencies {
   val akkaActorTestkit = "com.typesafe.akka" %% "akka-actor-testkit-typed" % akkaVersion % Test
   val testDependencies: Seq[ModuleID] = Seq(scalaTest, akkaActorTestkit)
 
-  val dependencies: Seq[ModuleID] = logback +: akkaDependencies ++: testDependencies
+  val dependencies: Seq[ModuleID] = logback +: akkaDependencies ++: testDependencies ++: circeDependencies
 }

@@ -1,35 +1,70 @@
 package cz.vlasec.gwi.csvimport
 
+import akka.actor.typed.{ActorRef, Scheduler}
+import akka.actor.typed.scaladsl.AskPattern.Askable
 import akka.http.scaladsl.model._
 import akka.http.scaladsl.server.Directives._
 import akka.http.scaladsl.server.Route
+import akka.util.Timeout
+import cz.vlasec.gwi.csvimport.service.{CsvService, CsvStatusResponse, CsvTaskStatusReport, EnqueueCsvTaskResponse}
+import cz.vlasec.gwi.csvimport.service.CsvService.CsvServiceCommand
+
+import scala.concurrent.Await
+import scala.concurrent.duration.DurationInt
 
 object Routes {
-  private val task: Route =
+  import CirceSupport._
+  import io.circe.syntax._
+  import io.circe.generic.auto._
+
+  private def task(serviceRef: ActorRef[CsvServiceCommand])(implicit scheduler: Scheduler): Route = {
+    implicit val timeout: Timeout = 200.millis
     pathPrefix("task") {
       concat(
         pathEnd {
           concat(
             get {
-              complete(HttpEntity(ContentTypes.`text/plain(UTF-8)`, "All running tasks"))
+              val response: Seq[CsvTaskStatusReport] = Await.result(
+                serviceRef.ask(ref => CsvService.ListTasks(ref)),
+                timeout.duration
+              )
+              complete(HttpEntity(ContentTypes.`application/json`, response.asJson.toString()))
             },
             post {
-              complete(HttpEntity(ContentTypes.`text/plain(UTF-8)`, "Created a new task"))
+              decodeRequest {
+                entity(as[EnqueueTaskRequest]) { request =>
+                  val response: EnqueueCsvTaskResponse = Await.result(
+                    serviceRef.ask(ref => CsvService.EnqueueTask(request.csvUrl, ref)),
+                    timeout.duration
+                  )
+                  complete(HttpEntity(ContentTypes.`application/json`, response.asJson.toString()))
+                }
+              }
             }
           )
         },
-        path(RemainingPath) { id =>
+        path(RemainingPath) { remainder =>
+          val taskId = remainder.toString.toInt
           concat(
             get {
-              complete(HttpEntity(ContentTypes.`text/plain(UTF-8)`, s"Status of task $id"))
+              val response: CsvStatusResponse = Await.result(
+                serviceRef.ask(ref => CsvService.TaskStatus(taskId, ref)),
+                timeout.duration
+              )
+              response match {
+                case Left(_) => complete(404)
+                case Right(status) => complete(HttpEntity(ContentTypes.`application/json`, status.asJson.toString()))
+              }
             },
             delete {
-              complete(HttpEntity(ContentTypes.`text/plain(UTF-8)`, s"Deleted task $id"))
+              serviceRef ! CsvService.CancelTask(taskId)
+              complete(202)
             }
           )
         }
       )
     }
+  }
 
   private val json: Route =
     pathPrefix("json") {
@@ -47,5 +82,8 @@ object Routes {
       )
     }
 
-  val routes: Route = Route.seal(concat(task, json))
+  def routes(csvServiceRef: ActorRef[CsvServiceCommand])(implicit scheduler: Scheduler): Route =
+    Route.seal(concat(task(csvServiceRef), json))
+
+  case class EnqueueTaskRequest(csvUrl: String)
 }

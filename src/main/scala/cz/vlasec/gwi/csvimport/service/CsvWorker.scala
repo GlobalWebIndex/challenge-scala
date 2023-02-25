@@ -34,7 +34,7 @@ private[service] object CsvWorker {
 
   private def simulateWork(taskRef: TaskRef): Unit = {
     // TODO replace this with actual stream processing the CSV
-    for (i <- 1 to 3) {
+    for (i <- 1 to 5) {
       Thread.sleep(ccaThousand())
       taskRef ! ProcessLines(ccaThousand())
     }
