@@ -1,10 +1,10 @@
-package cz.vlasec.gwi.csvimport.service
+package cz.vlasec.gwi.csvimport.task
 
 import akka.actor.typed.scaladsl.AskPattern.Askable
 import akka.actor.typed.scaladsl.Behaviors
 import akka.actor.typed.{Behavior, Scheduler}
 import akka.util.Timeout
-import cz.vlasec.gwi.csvimport.service.CsvTask.ProcessLines
+import cz.vlasec.gwi.csvimport.task.Task.ProcessLines
 
 import scala.concurrent.Await
 import scala.concurrent.duration.{DurationInt, DurationLong}
@@ -15,7 +15,7 @@ import scala.util.Random
  * When idle, worker reports itself to its overseer and awaits a task to process.
  * When in busy state, worker monitors the stream that processes the data and takes metrics.
  */
-private[service] object CsvWorker {
+private[task] object Worker {
 
   sealed trait WorkerCommand
   final case class ProcessTask(taskRef: TaskRef) extends WorkerCommand
@@ -41,7 +41,7 @@ private[service] object CsvWorker {
   private def busy(taskRef: TaskRef, overseerRef: OverseerRef)(implicit scheduler: Scheduler)
   : Behavior[WorkerCommand] = Behaviors.setup { context =>
     implicit def timeout: Timeout = 100.millis
-    val detail = Await.result(taskRef.ask(ref => CsvTask.Run(context.self, ref)), timeout.duration)
+    val detail = Await.result(taskRef.ask(ref => Task.Run(context.self, ref)), timeout.duration)
     context.log.info(s"Processing CSV at ${detail.url}")
     context.self ! FakeWork(6)
     Behaviors.withTimers { timers =>
@@ -50,7 +50,7 @@ private[service] object CsvWorker {
           timers.cancelAll()// stops fake work
           idle(overseerRef)
         case FinishTask =>
-          taskRef ! CsvTask.Finish(s"http://example.com/converted/${taskRef.path.name}.json", ccaThousand() - 400)
+          taskRef ! Task.Finish(s"http://example.com/converted/${taskRef.path.name}.json", ccaThousand() - 400)
           idle(overseerRef)
         case FakeWork(ticksLeft) =>
           // TODO replace the mocks with real processing

@@ -1,4 +1,4 @@
-package cz.vlasec.gwi.csvimport.service
+package cz.vlasec.gwi.csvimport.task
 
 import akka.actor.typed.{ActorRef, Behavior}
 import akka.actor.typed.scaladsl.{ActorContext, Behaviors}
@@ -9,7 +9,7 @@ import akka.actor.typed.scaladsl.{ActorContext, Behaviors}
  * In Running state, the task is being processed by a worker and the metrics are updated regularly.
  * In final states (Done, Failed, Canceled) the task only responds to status report.
  */
-private[service] object CsvTask {
+private[task] object Task {
 
   sealed trait TaskCommand
   case class Run(workerRef: WorkerRef, replyTo: ActorRef[CsvDetail]) extends TaskCommand
@@ -84,7 +84,7 @@ private[service] object CsvTask {
       case Fail =>
         finished(Failed(state.taskId, state.linesProcessed, state.millisElapsed))
       case Cancel =>
-        workerRef ! CsvWorker.CancelTask
+        workerRef ! Worker.CancelTask
         finished(Canceled(state.taskId, state.linesProcessed, state.millisElapsed))
     }
     Behaviors.receiveMessagePartial(behaviors.orElse(constantBehaviors(context, state)))

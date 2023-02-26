@@ -1,4 +1,4 @@
-package cz.vlasec.gwi.csvimport.service
+package cz.vlasec.gwi.csvimport.task
 
 import akka.actor.typed.{Behavior, Scheduler}
 import akka.actor.typed.scaladsl.{ActorContext, Behaviors}
@@ -10,12 +10,12 @@ import akka.actor.typed.scaladsl.{ActorContext, Behaviors}
  */
 object Overseer {
   sealed trait OverseerCommand
-  private[service] final case class IdleWorker(workerRef:WorkerRef) extends OverseerCommand
+  private[task] final case class IdleWorker(workerRef:WorkerRef) extends OverseerCommand
   private[Overseer] final case class WorkerStopped(workerId: Long) extends OverseerCommand
 
   def apply(workerCount: Int, serviceRef: ServiceRef)(implicit scheduler: Scheduler)
   : Behavior[OverseerCommand] = Behaviors.setup { context =>
-    (1 to workerCount).map(startWorker(context, _)).foreach(serviceRef ! CsvService.IdleWorker(_))
+    (1 to workerCount).map(startWorker(context, _)).foreach(serviceRef ! Service.IdleWorker(_))
     context.log.info(s"Sending $workerCount idle workers to ${serviceRef.path.name}.")
     overseeing(serviceRef)
   }
@@ -24,11 +24,11 @@ object Overseer {
   : Behavior[OverseerCommand] = Behaviors.setup { context =>
     Behaviors.receiveMessage {
       case IdleWorker(workerRef) =>
-        serviceRef ! CsvService.IdleWorker(workerRef)
+        serviceRef ! Service.IdleWorker(workerRef)
         Behaviors.same
       case WorkerStopped(workerId) =>
         context.log.warn(s"Restarting stopped worker-$workerId.")
-        serviceRef ! CsvService.IdleWorker(startWorker(context, workerId))
+        serviceRef ! Service.IdleWorker(startWorker(context, workerId))
         Behaviors.same
       case x =>
         context.log.warn(s"Invalid command: $x")
@@ -37,7 +37,7 @@ object Overseer {
   }
 
   private def startWorker(context: ActorContext[OverseerCommand], workerId: Long)(implicit scheduler: Scheduler): WorkerRef = {
-    val workerRef = context.spawn(CsvWorker(context.self), s"worker-$workerId")
+    val workerRef = context.spawn(Worker(context.self), s"worker-$workerId")
     context.watchWith(workerRef, WorkerStopped(workerId))
     workerRef
   }

@@ -4,9 +4,9 @@ import akka.actor.typed.{ActorSystem, Scheduler}
 import akka.actor.typed.scaladsl.Behaviors
 import akka.http.scaladsl.Http
 import cz.vlasec.gwi.csvimport.Routes._
-import cz.vlasec.gwi.csvimport.service.Overseer.{OverseerCommand => TaskOverseerCommand}
-import cz.vlasec.gwi.csvimport.service.{Overseer => TaskOverseer, CsvService => TaskService}
-import cz.vlasec.gwi.csvimport.service.CsvService.{ServiceCommand => TaskServiceCommand}
+import cz.vlasec.gwi.csvimport.task.Overseer.{OverseerCommand => TaskOverseerCommand}
+import cz.vlasec.gwi.csvimport.task.{Overseer => TaskOverseer, Service => TaskService}
+import cz.vlasec.gwi.csvimport.task.Service.{ServiceCommand => TaskServiceCommand}
 
 import scala.concurrent.ExecutionContextExecutor
 import scala.io.StdIn

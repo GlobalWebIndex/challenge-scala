@@ -6,8 +6,8 @@ import akka.http.scaladsl.model._
 import akka.http.scaladsl.server.Directives._
 import akka.http.scaladsl.server.Route
 import akka.util.Timeout
-import cz.vlasec.gwi.csvimport.service.{CsvService, CsvStatusResponse, TaskStatusReport, EnqueueTaskResponse}
-import cz.vlasec.gwi.csvimport.service.CsvService.ServiceCommand
+import cz.vlasec.gwi.csvimport.task.{Service, CsvStatusResponse, TaskStatusReport, EnqueueTaskResponse}
+import cz.vlasec.gwi.csvimport.task.Service.ServiceCommand
 
 import scala.concurrent.Await
 import scala.concurrent.duration.DurationInt
@@ -25,7 +25,7 @@ object Routes {
           concat(
             get {
               val response: Seq[TaskStatusReport] = Await.result(
-                taskServiceRef.ask(ref => CsvService.ListTasks(ref)),
+                taskServiceRef.ask(ref => Service.ListTasks(ref)),
                 timeout.duration
               )
               complete(HttpEntity(ContentTypes.`application/json`, response.asJson.toString()))
@@ -34,7 +34,7 @@ object Routes {
               decodeRequest {
                 entity(as[EnqueueTaskRequest]) { request =>
                   val response: EnqueueTaskResponse = Await.result(
-                    taskServiceRef.ask(ref => CsvService.EnqueueTask(request.csvUrl, ref)),
+                    taskServiceRef.ask(ref => Service.EnqueueTask(request.csvUrl, ref)),
                     timeout.duration
                   )
                   complete(HttpEntity(ContentTypes.`application/json`, response.asJson.toString()))
@@ -48,7 +48,7 @@ object Routes {
           concat(
             get {
               val response: CsvStatusResponse = Await.result(
-                taskServiceRef.ask(ref => CsvService.TaskStatus(taskId, ref)),
+                taskServiceRef.ask(ref => Service.TaskStatus(taskId, ref)),
                 timeout.duration
               )
               response match {
@@ -57,7 +57,7 @@ object Routes {
               }
             },
             delete {
-              taskServiceRef ! CsvService.CancelTask(taskId)
+              taskServiceRef ! Service.CancelTask(taskId)
               complete(202)
             }
           )
