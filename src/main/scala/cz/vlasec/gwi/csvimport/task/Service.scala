@@ -2,7 +2,6 @@ package cz.vlasec.gwi.csvimport.task
 
 import akka.actor.typed.scaladsl.Behaviors
 import akka.actor.typed.{ActorRef, Behavior, Scheduler}
-import Worker._
 import akka.actor.typed.scaladsl.AskPattern.Askable
 import akka.util.Timeout
 import cz.vlasec.gwi.csvimport.task.Task.TaskCommand
@@ -22,8 +21,8 @@ object Service {
   final case class TaskStatus(taskId: TaskId, replyTo: ActorRef[Either[StatusFailure, TaskStatusReport]]) extends ServiceCommand
   final case class ListTasks(replyTo: ActorRef[Seq[TaskStatusReport]]) extends ServiceCommand
   final case class CancelTask(taskId: TaskId) extends ServiceCommand
-  // Idle workers are pushed here rather than pulled on demand, to remove the need for
-  private[task] final case class IdleWorker(taskId: ActorRef[WorkerCommand]) extends ServiceCommand
+  // Idle workers are pushed here rather than pulled on demand, so that there is more of telling and less of asking.
+  private[task] final case class IdleWorker(taskId: WorkerRef) extends ServiceCommand
 
   private case class CsvServiceState(nextTaskId: TaskId, taskQueue: Vector[TaskRef], idleWorkers: Set[WorkerRef]) {
     def workerOption: (Option[WorkerRef], Set[WorkerRef]) =
@@ -50,7 +49,7 @@ object Service {
             context.log.info(s"Task $taskId assigned instantly.")
             serving(state.copy(idleWorkers = otherWorkers, nextTaskId = taskId + 1))
         }
-      case IdleWorker(workerRef: ActorRef[WorkerCommand]) =>
+      case IdleWorker(workerRef: WorkerRef) =>
         state.taskOption match {
           case (None, _) =>
             context.log.info(s"${workerRef.path.name} idles.")
@@ -66,7 +65,9 @@ object Service {
             taskRef ! Task.Cancel
             val remainingQueue = state.taskQueue.filterNot(_ == taskRef)
             serving(state.copy(taskQueue = remainingQueue))
-          case None => Behaviors.same
+          case None =>
+            context.log.warn(s"Attempting to cancel non-existing task with ID $taskId.")
+            Behaviors.same
         }
       case TaskStatus(taskId, replyTo) =>
         context.child(taskName(taskId)) match {

@@ -13,7 +13,7 @@ private[task] object Task {
 
   sealed trait TaskCommand
   case class Run(workerRef: WorkerRef, replyTo: ActorRef[CsvDetail]) extends TaskCommand
-  final case class Finish(url: ResultPath, linesAdded: Long) extends TaskCommand
+  final case class Finish(url: ResultPath) extends TaskCommand
   case object Fail extends TaskCommand
   case object Cancel extends TaskCommand
   final case class ProcessLines(linesAdded: Long) extends TaskCommand
@@ -57,7 +57,7 @@ private[task] object Task {
       replyTo ! state.report
       Behaviors.same
     case x =>
-      context.log.warn(s"Invalid command $x")
+      context.log.warn(s"Invalid command $x for status ${state.statusName}.")
       Behaviors.same
   }
 
@@ -75,12 +75,11 @@ private[task] object Task {
 
   private def run(state: Running, workerRef: WorkerRef)
   : Behavior[TaskCommand] = Behaviors.setup { context =>
-    context.log.info(s"Task ${state.taskId} is running with ${state.linesProcessed} lines processed.")
     val behaviors: PartialFunction[TaskCommand, Behavior[TaskCommand]] = {
       case ProcessLines(linesAdded) =>
         run(state.copy(linesProcessed = state.linesProcessed + linesAdded), workerRef)
-      case Finish(url, linesAdded) =>
-        finished(Done(state.taskId, state.linesProcessed + linesAdded, state.millisElapsed, url))
+      case Finish(url) =>
+        finished(Done(state.taskId, state.linesProcessed, state.millisElapsed, url))
       case Fail =>
         finished(Failed(state.taskId, state.linesProcessed, state.millisElapsed))
       case Cancel =>
