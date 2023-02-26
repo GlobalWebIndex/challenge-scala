@@ -5,10 +5,12 @@ import akka.actor.typed.scaladsl.AskPattern.Askable
 import akka.http.scaladsl.model._
 import akka.http.scaladsl.server.Directives._
 import akka.http.scaladsl.server.Route
+import akka.stream.scaladsl.FileIO
 import akka.util.Timeout
-import cz.vlasec.gwi.csvimport.task.{Service, CsvStatusResponse, TaskStatusReport, EnqueueTaskResponse}
+import cz.vlasec.gwi.csvimport.task.{CsvStatusResponse, EnqueueTaskResponse, Service, TaskStatusReport, tempDirPath}
 import cz.vlasec.gwi.csvimport.task.Service.ServiceCommand
 
+import java.nio.file.Paths
 import scala.concurrent.Await
 import scala.concurrent.duration.DurationInt
 
@@ -68,18 +70,16 @@ object Routes {
 
   private val json: Route =
     pathPrefix("json") {
-      concat(
-        pathEnd {
-          get {
-            complete(HttpEntity(ContentTypes.`text/plain(UTF-8)`, "List of all JSON files"))
-          }
-        },
-        path(RemainingPath) { filename =>
-          get {
-            complete(HttpEntity(ContentTypes.`text/plain(UTF-8)`, s"Contents of file $filename"))
-          }
+      path(RemainingPath) { remainder =>
+        get {
+          val filename = Paths.get(remainder.toString()).normalize()
+          Some(filename).filterNot(_.startsWith(".."))
+            .map(tempDirPath.resolve)
+            .map(FileIO.fromPath(_))
+            .map(src => complete(HttpEntity(ContentTypes.`application/json`, src)))
+            .getOrElse(complete(404))
         }
-      )
+      }
     }
 
   def routes(taskServiceRef: ActorRef[ServiceCommand])(implicit scheduler: Scheduler): Route =

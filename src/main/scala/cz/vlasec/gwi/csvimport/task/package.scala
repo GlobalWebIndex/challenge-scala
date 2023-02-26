@@ -1,5 +1,7 @@
 package cz.vlasec.gwi.csvimport
 
+import java.nio.file.{Files, Path}
+
 package object task {
   import akka.actor.typed.ActorRef
   import cz.vlasec.gwi.csvimport.task.Service.ServiceCommand
@@ -29,4 +31,6 @@ package object task {
   private[task] type ServiceRef = ActorRef[ServiceCommand]
   private[task] type OverseerRef = ActorRef[OverseerCommand]
   type CsvStatusResponse = Either[StatusFailure, TaskStatusReport]
+
+  lazy val tempDirPath: Path = Files.createTempDirectory("json")
 }

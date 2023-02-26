@@ -8,14 +8,13 @@ import akka.actor.typed.{Behavior, Scheduler}
 import akka.http.scaladsl.Http
 import akka.http.scaladsl.client.RequestBuilding.Get
 import akka.http.scaladsl.model.HttpResponse
-import akka.stream.{IOResult, Materializer}
+import akka.stream.Materializer
 import akka.stream.alpakka.csv.scaladsl.{CsvParsing, CsvToMap}
 import akka.stream.scaladsl.{FileIO, Flow, Sink}
 import akka.util.{ByteString, Timeout}
 
-import java.nio.file.Paths
 import java.util.concurrent.{ExecutorService, Executors}
-import scala.concurrent.{Await, ExecutionContext, Future}
+import scala.concurrent.{Await, ExecutionContext}
 import scala.concurrent.duration.DurationInt
 import scala.util.{Failure, Success, Try}
 
@@ -69,7 +68,7 @@ private[task] object Worker {
         // TODO handle these bloody redirects
         val result = response.entity.dataBytes
           .via(flow(context.self))
-          .runWith(FileIO.toPath(Paths.get(filename)))
+          .runWith(FileIO.toPath(tempDirPath.resolve(filename)))
         context.self ! StreamTask(executor)
         implicit val executionContext: ExecutionContext = ExecutionContext.fromExecutorService(executor)
         result.onComplete(_ => context.self ! FinishTask)
@@ -121,5 +120,5 @@ private[task] object Worker {
       })
   }
 
-  private def filename(taskRef: TaskRef) = s"D:/tmp/csvjson/${taskRef.path.name}.jsonl"
+  private def filename(taskRef: TaskRef) = s"${taskRef.path.name}.jsonl"
 }
