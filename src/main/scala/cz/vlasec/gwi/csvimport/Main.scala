@@ -4,8 +4,9 @@ import akka.actor.typed.{ActorSystem, Scheduler}
 import akka.actor.typed.scaladsl.Behaviors
 import akka.http.scaladsl.Http
 import cz.vlasec.gwi.csvimport.Routes._
-import cz.vlasec.gwi.csvimport.service.CsvService
-import cz.vlasec.gwi.csvimport.service.CsvService.CsvServiceCommand
+import cz.vlasec.gwi.csvimport.service.Overseer.{OverseerCommand => TaskOverseerCommand}
+import cz.vlasec.gwi.csvimport.service.{Overseer => TaskOverseer, CsvService => TaskService}
+import cz.vlasec.gwi.csvimport.service.CsvService.{ServiceCommand => TaskServiceCommand}
 
 import scala.concurrent.ExecutionContextExecutor
 import scala.io.StdIn
@@ -18,9 +19,10 @@ object Main {
     implicit val executionContext: ExecutionContextExecutor = system.executionContext
     implicit val scheduler: Scheduler = system.scheduler
 
-    val csvServiceRef = system.systemActorOf[CsvServiceCommand](CsvService(), "csv-service")
+    val taskServiceRef = system.systemActorOf[TaskServiceCommand](TaskService(), "task-service")
+    system.systemActorOf[TaskOverseerCommand](TaskOverseer(workerCount = 2, taskServiceRef), "task-overseer")
 
-    val bindingFuture = Http().newServerAt("localhost", 8080).bind(routes(csvServiceRef))
+    val bindingFuture = Http().newServerAt("localhost", 8080).bind(routes(taskServiceRef))
 
     println(s"Server now online. Please navigate to http://localhost:8080/task\nPress RETURN to stop...")
     StdIn.readLine() // let it run until user presses return

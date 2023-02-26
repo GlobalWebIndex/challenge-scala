@@ -5,79 +5,68 @@ import akka.actor.typed.{ActorRef, Behavior, Scheduler}
 import CsvWorker._
 import akka.actor.typed.scaladsl.AskPattern.Askable
 import akka.util.Timeout
-import cz.vlasec.gwi.csvimport.service.CsvTask.CsvTaskCommand
+import cz.vlasec.gwi.csvimport.service.CsvTask.TaskCommand
 
-import scala.collection.Set
 import scala.concurrent.Await
 import scala.concurrent.duration.DurationInt
 
+/**
+ * Task service receives CSV URLs to process, creates tasks, monitors their status and cancels them on demand.
+ * Idle workers need to be supplied for the service to be able to process anything.
+ * Task service's behavior depends on its task queue and idle workers count.
+ * Task service only spawns actors of type Task as children, so it can list the tasks easily from its actor context.
+ */
 object CsvService {
-  private val WorkerCount = 2
+  sealed trait ServiceCommand
+  final case class EnqueueTask(csv: CsvUrl, replyTo: ActorRef[EnqueueTaskResponse]) extends ServiceCommand
+  final case class TaskStatus(taskId: TaskId, replyTo: ActorRef[Either[StatusFailure, TaskStatusReport]]) extends ServiceCommand
+  final case class ListTasks(replyTo: ActorRef[Seq[TaskStatusReport]]) extends ServiceCommand
+  final case class CancelTask(taskId: TaskId) extends ServiceCommand
+  // Idle workers are pushed here rather than pulled on demand, to remove the need for
+  private[service] final case class IdleWorker(taskId: ActorRef[WorkerCommand]) extends ServiceCommand
 
-  sealed trait CsvServiceCommand
-  final case class EnqueueTask(csv: CsvUrl, replyTo: ActorRef[EnqueueCsvTaskResponse]) extends CsvServiceCommand
-  final case class TaskStatus(taskId: TaskId, replyTo: ActorRef[Either[StatusFailure, CsvTaskStatusReport]]) extends CsvServiceCommand
-  final case class ListTasks(replyTo: ActorRef[Seq[CsvTaskStatusReport]]) extends CsvServiceCommand
-  final case class CancelTask(taskId: TaskId) extends CsvServiceCommand
-  private[service] final case class WorkerStopped(workerId: Long) extends CsvServiceCommand
-  private[service] final case class WorkerIdle(taskId: ActorRef[CsvWorkerCommand]) extends CsvServiceCommand
-
-  private case class CsvServiceState(
-                                      nextTaskId: TaskId,
-                                      taskQueue: Vector[TaskRef],
-                                      idleWorkers: Set[WorkerRef],
-                                      currentTasks: Map[TaskRef, WorkerRef]) {
+  private case class CsvServiceState(nextTaskId: TaskId, taskQueue: Vector[TaskRef], idleWorkers: Set[WorkerRef]) {
     def workerOption: (Option[WorkerRef], Set[WorkerRef]) =
       if (idleWorkers.isEmpty) (None, Set.empty) else (Some(idleWorkers.head), idleWorkers.tail)
     def taskOption: (Option[TaskRef], Vector[TaskRef]) =
       if (taskQueue.isEmpty) (None, Vector.empty) else (Some(taskQueue.head), taskQueue.tail)
   }
 
-  def apply()(implicit scheduler: Scheduler): Behavior[CsvServiceCommand] = Behaviors.setup { context =>
-    val workers = (1 to WorkerCount).map(n => context.spawn(CsvWorker(), workerName(n)) -> n).toMap
-    workers.foreach(e => context.watchWith(e._1, WorkerStopped(e._2)))
-    overseeing(CsvServiceState(0, Vector.empty, workers.keySet, Map.empty))
-  }
+  def apply()(implicit scheduler: Scheduler): Behavior[ServiceCommand] =
+    serving(CsvServiceState(1, Vector.empty, Set.empty))
 
-  private def overseeing(state: CsvServiceState)(implicit scheduler: Scheduler)
-  : Behavior[CsvServiceCommand] = Behaviors.setup { context =>
+  private def serving(state: CsvServiceState)(implicit scheduler: Scheduler)
+  : Behavior[ServiceCommand] = Behaviors.setup { context =>
     Behaviors.receiveMessage {
       case EnqueueTask(csv, replyTo) =>
         val taskId = state.nextTaskId
         val taskRef = context.spawn(CsvTask(taskId, CsvDetail(csv)), taskName(taskId))
-        replyTo ! EnqueueCsvTaskResponse(taskId)
+        replyTo ! EnqueueTaskResponse(taskId)
         state.workerOption match {
           case (None, _) =>
-            context.log.info(s"Job ${state.nextTaskId} enqueued.")
-            overseeing(state.copy(taskQueue = state.taskQueue :+ taskRef, nextTaskId = state.nextTaskId + 1))
+            context.log.info(s"Task $taskId enqueued.")
+            serving(state.copy(taskQueue = state.taskQueue :+ taskRef, nextTaskId = taskId + 1))
           case (Some(workerRef), otherWorkers) =>
-            workerRef ! CsvWorker.ConvertCsv(taskRef, context.self)
-            context.log.info(s"Job ${state.nextTaskId} assigned instantly.")
-            overseeing(state.copy(idleWorkers = otherWorkers, nextTaskId = state.nextTaskId + 1,
-              currentTasks = state.currentTasks + (taskRef -> workerRef)))
+            workerRef ! CsvWorker.ProcessTask(taskRef)
+            context.log.info(s"Task $taskId assigned instantly.")
+            serving(state.copy(idleWorkers = otherWorkers, nextTaskId = taskId + 1))
         }
-      case WorkerIdle(workerRef: ActorRef[CsvWorkerCommand]) =>
-        val runningTasks = state.currentTasks.filterNot(_._2 == workerRef)
+      case IdleWorker(workerRef: ActorRef[WorkerCommand]) =>
         state.taskOption match {
           case (None, _) =>
-            context.log.info(s"Worker ${workerRef.path} idles.")
-            overseeing(state.copy(idleWorkers = state.idleWorkers + workerRef, currentTasks = runningTasks))
+            context.log.info(s"${workerRef.path.name} idles.")
+            serving(state.copy(idleWorkers = state.idleWorkers + workerRef))
           case (Some(taskRef), remainingQueue) =>
-            workerRef ! CsvWorker.ConvertCsv(taskRef, context.self)
-            context.log.info(s"Task ${taskRef.path} assigned to worker ${workerRef.path}.")
-            overseeing(state.copy(taskQueue = remainingQueue, currentTasks = runningTasks + (taskRef -> workerRef)))
+            workerRef ! CsvWorker.ProcessTask(taskRef)
+            context.log.info(s"${taskRef.path.name} assigned to ${workerRef.path.name}.")
+            serving(state.copy(taskQueue = remainingQueue))
         }
       case CancelTask(taskId) =>
         context.child(taskName(taskId)) match {
           case Some(taskRef: TaskRef) =>
             taskRef ! CsvTask.Cancel
-            state.currentTasks.get(taskRef).foreach { workerRef =>
-              context.log.warn(s"Stopping worker ${workerRef.path} to cancel their work.")
-              context.stop(workerRef)
-            }
             val remainingQueue = state.taskQueue.filterNot(_ == taskRef)
-            val runningTasks = state.currentTasks.filterNot(_._1 == taskRef)
-            overseeing(state.copy(taskQueue = remainingQueue, currentTasks = runningTasks))
+            serving(state.copy(taskQueue = remainingQueue))
           case None => Behaviors.same
         }
       case TaskStatus(taskId, replyTo) =>
@@ -88,11 +77,8 @@ object CsvService {
         Behaviors.same
       case ListTasks(replyTo) =>
         implicit val timeout: Timeout = 100.millis
-        // At this point, I don't even want to refactor it to have separate contexts
-        // and actors for tasks and workers. It would save me the filtering, but
-        // it would also create some other problems of their own.
-        val result = context.children.filter(_.path.name.matches(".*task-\\d+"))
-          .map(_.unsafeUpcast[CsvTaskCommand])
+        val result = context.children
+          .map(_.unsafeUpcast[TaskCommand])
           .map(_.ask(ref => CsvTask.StatusReport(ref)))
           .map(Await.result(_, timeout.duration))
           .collect {
@@ -100,16 +86,11 @@ object CsvService {
           }.toSeq
         replyTo ! result
         Behaviors.same
-      case WorkerStopped(workerId) =>
-        val workerRef = context.spawn(CsvWorker(), workerName(workerId))
-        context.watchWith(workerRef, WorkerStopped(workerId))
-        context.self ! WorkerIdle(workerRef)
-        context.log.warn(s"Restarting stopped worker with ID $workerId.")
+      case x =>
+        context.log.warn(s"Invalid command: $x")
         Behaviors.same
     }
   }
-
-  private def workerName(workerId: Long): String = s"worker-$workerId"
 
   private def taskName(taskId: TaskId): String = s"task-$taskId"
 }

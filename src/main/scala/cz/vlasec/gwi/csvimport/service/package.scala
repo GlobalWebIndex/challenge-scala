@@ -1,17 +1,17 @@
 package cz.vlasec.gwi.csvimport
 
 package object service {
-
   import akka.actor.typed.ActorRef
-  import cz.vlasec.gwi.csvimport.service.CsvService.CsvServiceCommand
-  import cz.vlasec.gwi.csvimport.service.CsvTask.CsvTaskCommand
-  import cz.vlasec.gwi.csvimport.service.CsvWorker.CsvWorkerCommand
+  import cz.vlasec.gwi.csvimport.service.CsvService.ServiceCommand
+  import cz.vlasec.gwi.csvimport.service.CsvTask.TaskCommand
+  import cz.vlasec.gwi.csvimport.service.CsvWorker.WorkerCommand
+  import cz.vlasec.gwi.csvimport.service.Overseer.OverseerCommand
 
-  final case class EnqueueCsvTaskResponse(taskId: TaskId)
+  final case class EnqueueTaskResponse(taskId: TaskId)
 
   case class StatusFailure private[service](reason: String)
 
-  case class CsvTaskStatusReport private[service](
+  case class TaskStatusReport private[service](
                                                    taskId: TaskId,
                                                    state: String,
                                                    linesProcessed: Long,
@@ -24,8 +24,9 @@ package object service {
   type ResultPath = String
   type CsvUrl = String
   type TaskId = Long
-  private[service] type TaskRef = ActorRef[CsvTaskCommand]
-  private[service] type WorkerRef = ActorRef[CsvWorkerCommand]
-  private[service] type ServiceRef = ActorRef[CsvServiceCommand]
-  type CsvStatusResponse = Either[StatusFailure, CsvTaskStatusReport]
+  private[service] type TaskRef = ActorRef[TaskCommand]
+  private[service] type WorkerRef = ActorRef[WorkerCommand]
+  private[service] type ServiceRef = ActorRef[ServiceCommand]
+  private[service] type OverseerRef = ActorRef[OverseerCommand]
+  type CsvStatusResponse = Either[StatusFailure, TaskStatusReport]
 }
