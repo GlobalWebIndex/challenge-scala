@@ -1,6 +1,6 @@
 package cz.vlasec.gwi.csvimport.task
 
-import akka.actor.typed.{Behavior, Scheduler}
+import akka.actor.typed.Behavior
 import akka.actor.typed.scaladsl.{ActorContext, Behaviors}
 
 /**
@@ -13,14 +13,14 @@ object Overseer {
   private[task] final case class IdleWorker(workerRef:WorkerRef) extends OverseerCommand
   private[Overseer] final case class WorkerStopped(workerId: Long) extends OverseerCommand
 
-  def apply(workerCount: Int, serviceRef: ServiceRef)(implicit scheduler: Scheduler)
+  def apply(workerCount: Int, serviceRef: ServiceRef)
   : Behavior[OverseerCommand] = Behaviors.setup { context =>
     (1 to workerCount).map(startWorker(context, _)).foreach(serviceRef ! Service.IdleWorker(_))
     context.log.info(s"Sending $workerCount idle workers to ${serviceRef.path.name}.")
     overseeing(serviceRef)
   }
 
-  private def overseeing(serviceRef: ServiceRef)(implicit scheduler: Scheduler)
+  private def overseeing(serviceRef: ServiceRef)
   : Behavior[OverseerCommand] = Behaviors.setup { context =>
     Behaviors.receiveMessage {
       case IdleWorker(workerRef) =>
@@ -36,7 +36,7 @@ object Overseer {
     }
   }
 
-  private def startWorker(context: ActorContext[OverseerCommand], workerId: Long)(implicit scheduler: Scheduler): WorkerRef = {
+  private def startWorker(context: ActorContext[OverseerCommand], workerId: Long): WorkerRef = {
     val workerRef = context.spawn(Worker(context.self), s"worker-$workerId")
     context.watchWith(workerRef, WorkerStopped(workerId))
     workerRef

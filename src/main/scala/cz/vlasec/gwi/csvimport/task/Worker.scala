@@ -1,8 +1,11 @@
 package cz.vlasec.gwi.csvimport.task
 
+import akka.actor.ActorSystem
 import akka.actor.typed.scaladsl.AskPattern.Askable
 import akka.actor.typed.scaladsl.Behaviors
 import akka.actor.typed.{Behavior, Scheduler}
+import akka.http.scaladsl.Http
+import akka.http.scaladsl.client.RequestBuilding.Get
 import akka.util.Timeout
 import cz.vlasec.gwi.csvimport.task.Task.ProcessLines
 
@@ -25,10 +28,9 @@ private[task] object Worker {
   private case class FakeWork(ticksLeft: Int) extends WorkerCommand
 
 
-  def apply(overseerRef: OverseerRef)(implicit scheduler: Scheduler): Behavior[WorkerCommand] = idle(overseerRef)
+  def apply(overseerRef: OverseerRef): Behavior[WorkerCommand] = idle(overseerRef)
 
-  private def idle(overseerRef: OverseerRef)(implicit scheduler: Scheduler)
-  : Behavior[WorkerCommand] = Behaviors.setup { context =>
+  private def idle(overseerRef: OverseerRef): Behavior[WorkerCommand] = Behaviors.setup { context =>
       overseerRef ! Overseer.IdleWorker(context.self)
       Behaviors.receiveMessage {
         case ProcessTask(taskRef) =>
@@ -38,9 +40,9 @@ private[task] object Worker {
       }
   }
 
-  private def busy(taskRef: TaskRef, overseerRef: OverseerRef)(implicit scheduler: Scheduler)
-  : Behavior[WorkerCommand] = Behaviors.setup { context =>
+  private def busy(taskRef: TaskRef, overseerRef: OverseerRef): Behavior[WorkerCommand] = Behaviors.setup { context =>
     implicit def timeout: Timeout = 100.millis
+    implicit val scheduler: Scheduler = context.system.scheduler
     val detail = Await.result(taskRef.ask(ref => Task.Run(context.self, ref)), timeout.duration)
     context.log.info(s"Processing CSV at ${detail.url}")
     context.self ! FakeWork(6)

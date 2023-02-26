@@ -17,12 +17,11 @@ object Main {
     implicit val system: ActorSystem[_] = ActorSystem(Behaviors.empty, "my-system")
     // needed for the future flatMap/onComplete in the end
     implicit val executionContext: ExecutionContextExecutor = system.executionContext
-    implicit val scheduler: Scheduler = system.scheduler
 
     val taskServiceRef = system.systemActorOf[TaskServiceCommand](TaskService(), "task-service")
     system.systemActorOf[TaskOverseerCommand](TaskOverseer(workerCount = 2, taskServiceRef), "task-overseer")
 
-    val bindingFuture = Http().newServerAt("localhost", 8080).bind(routes(taskServiceRef))
+    val bindingFuture = Http().newServerAt("localhost", 8080).bind(routes(taskServiceRef)(system.scheduler))
 
     println(s"Server now online. Please navigate to http://localhost:8080/task\nPress RETURN to stop...")
     StdIn.readLine() // let it run until user presses return

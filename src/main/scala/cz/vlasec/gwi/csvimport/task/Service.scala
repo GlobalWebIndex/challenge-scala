@@ -32,11 +32,10 @@ object Service {
       if (taskQueue.isEmpty) (None, Vector.empty) else (Some(taskQueue.head), taskQueue.tail)
   }
 
-  def apply()(implicit scheduler: Scheduler): Behavior[ServiceCommand] =
+  def apply(): Behavior[ServiceCommand] =
     serving(CsvServiceState(1, Vector.empty, Set.empty))
 
-  private def serving(state: CsvServiceState)(implicit scheduler: Scheduler)
-  : Behavior[ServiceCommand] = Behaviors.setup { context =>
+  private def serving(state: CsvServiceState): Behavior[ServiceCommand] = Behaviors.setup { context =>
     Behaviors.receiveMessage {
       case EnqueueTask(csv, replyTo) =>
         val taskId = state.nextTaskId
@@ -77,6 +76,7 @@ object Service {
         Behaviors.same
       case ListTasks(replyTo) =>
         implicit val timeout: Timeout = 100.millis
+        implicit val scheduler: Scheduler = context.system.scheduler
         val result = context.children
           .map(_.unsafeUpcast[TaskCommand])
           .map(_.ask(ref => Task.StatusReport(ref)))
