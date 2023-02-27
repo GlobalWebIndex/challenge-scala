@@ -16,10 +16,12 @@ import scala.util.{Failure, Success, Try}
 /**
  * Sourceror does the dark magic of opening HTTP portals so that others don't have to.
  * It works asynchronously. It initiates HTTP connection with given URL, processes redirects,
- * and in the end, it calls one of the provided callbacks to leave the heavy lifting to others.
+ * and in the end, it returns a Source if available, to leave the heavy lifting to others.
  * As an esteemed magician, the sourceror can clone itself, but prefers not to keep its clones around.
  */
 object Sourceror {
+  private val MaxRedirects = 5 // to prevent running into redirect loops
+
   type SourceConsumerRef = ActorRef[Option[Source[ByteString, Any]]]
   sealed trait SourcerorCommand
   final case class InitiateHttp(url: String, replyTo: SourceConsumerRef) extends SourcerorCommand
@@ -54,7 +56,12 @@ object Sourceror {
         handleResponse(response, url, context)
         Behaviors.same
       case HandleRedirect(newUrl) =>
-        busy(newUrl, replyTo, redirects + 1)
+        if (redirects > MaxRedirects) {
+          context.self ! Fail
+          Behaviors.same
+        } else {
+          busy(newUrl, replyTo, redirects + 1)
+        }
       case Succeed(source) =>
         replyTo ! Some(source)
         if (clone) Behaviors.stopped else idle()

@@ -10,9 +10,7 @@ import akka.stream.scaladsl.{FileIO, Flow, Sink}
 import akka.util.{ByteString, Timeout}
 import cz.vlasec.gwi.csvimport.Sourceror
 import cz.vlasec.gwi.csvimport.Sourceror.SourceConsumerRef
-import cz.vlasec.gwi.csvimport.task.Worker.CancelTaskException
 
-import java.util.concurrent.{ExecutorService, Executors}
 import scala.concurrent.{Await, ExecutionContext}
 import scala.concurrent.duration.DurationInt
 import scala.util.{Failure, Success}
@@ -47,9 +45,8 @@ private[task] object Worker {
           Overseer.ContactSourceror(Sourceror.InitiateHttp(detail.url, ref))
         }, timeout.duration) match {
           case Some(source) =>
-            val executor = Executors.newSingleThreadExecutor()
             implicit val mat: Materializer = Materializer(context)
-            implicit val executionContext: ExecutionContext = ExecutionContext.fromExecutorService(executor)
+            implicit val executionContext: ExecutionContext = context.system.executionContext
             val killSwitch = KillSwitches.shared(taskRef.path.toString)
             source
               .via(flow(killSwitch, selfRef))
