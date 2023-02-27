@@ -29,7 +29,6 @@ private[task] object Worker {
   private case class StreamTask(executor: ExecutorService) extends WorkerCommand
   final case object CancelTask extends WorkerCommand
   private case object FailTask extends WorkerCommand
-  // The future of these two is uncertain after the introduction of the actual stream.
   private case object LineProcessed extends WorkerCommand
   private case object FinishTask extends WorkerCommand
 
@@ -49,7 +48,7 @@ private[task] object Worker {
         implicit val classicSystem: ActorSystem = context.system.classicSystem
         implicit val executionContext: ExecutionContext = ExecutionContext.fromExecutorService(executor)
         Http().singleRequest(Get(detail.url))
-          .onComplete(httpOnComplete(context, executor, filename(taskRef)))
+          .onComplete(httpOnComplete(context, executor, filename(taskRef), detail.url))
 
         initiating(taskRef, overseerRef)
       case x =>
@@ -57,20 +56,38 @@ private[task] object Worker {
     }
   }
 
-  private def httpOnComplete(context: ActorContext[WorkerCommand], executor: ExecutorService, filename: String)
+  private def httpOnComplete(context: ActorContext[WorkerCommand], executor: ExecutorService, filename: String,
+                             originalUrl: String, redirects: Int = 0)
+                            (implicit executionContext: ExecutionContext, classicSystem: ActorSystem)
   : Try[HttpResponse] => Unit = {
     case Success(response) =>
-      if (response.status.isFailure()) {
+      if (response.status.isFailure() || (response.status.isRedirection() && redirects > 3)) {
         context.log.error(s"HTTP request failed with status ${response.status}.")
         context.self ! FailTask
+      } else if (response.status.isRedirection()) {
+        // This monstrosity might have a better solution. However:
+        // - Spray HTTP is aging like a fine milk, with only Scala 2.11 support and last version from 2016
+        // - Gigahorse doesn't seem to be very inter-operable with Akka Streams
+        // - other options might exist, but Googling things like Akka Http isRedirection or FollowRedirect find nothing
+        // Thus, I decided to at least come up with a working solution that looks like a dumpster fire.
+        response.entity.discardBytes()
+        val baseUrl = originalUrl.replaceAll("^(https?://[^/]+).*$", "$1")
+        response.headers.find(_.name == "Location").map(_.value).map(redir =>
+          if (redir.startsWith("/")) baseUrl + redir else redir
+        ) match {
+          case Some(redirUrl) =>
+            Http().singleRequest(Get(redirUrl))
+              .onComplete(httpOnComplete(context, executor, filename, originalUrl, redirects + 1))
+          case None =>
+            context.log.warn("Failed to follow redirections.")
+            context.self ! FailTask
+        }
       } else {
         implicit val mat: Materializer = Materializer(context)
-        // TODO handle these bloody redirects
         val result = response.entity.dataBytes
           .via(flow(context.self))
           .runWith(FileIO.toPath(tempDirPath.resolve(filename)))
         context.self ! StreamTask(executor)
-        implicit val executionContext: ExecutionContext = ExecutionContext.fromExecutorService(executor)
         result.onComplete(_ => context.self ! FinishTask)
       }
     case Failure(exception) =>
