@@ -1,22 +1,21 @@
 package cz.vlasec.gwi.csvimport.task
 
 import akka.NotUsed
-import akka.actor.ActorSystem
 import akka.actor.typed.scaladsl.AskPattern.Askable
-import akka.actor.typed.scaladsl.{ActorContext, Behaviors}
+import akka.actor.typed.scaladsl.Behaviors
 import akka.actor.typed.{Behavior, Scheduler}
-import akka.http.scaladsl.Http
-import akka.http.scaladsl.client.RequestBuilding.Get
-import akka.http.scaladsl.model.HttpResponse
-import akka.stream.Materializer
+import akka.stream.{KillSwitches, Materializer, SharedKillSwitch}
 import akka.stream.alpakka.csv.scaladsl.{CsvParsing, CsvToMap}
 import akka.stream.scaladsl.{FileIO, Flow, Sink}
 import akka.util.{ByteString, Timeout}
+import cz.vlasec.gwi.csvimport.Sourceror
+import cz.vlasec.gwi.csvimport.Sourceror.SourceConsumerRef
+import cz.vlasec.gwi.csvimport.task.Worker.CancelTaskException
 
 import java.util.concurrent.{ExecutorService, Executors}
 import scala.concurrent.{Await, ExecutionContext}
 import scala.concurrent.duration.DurationInt
-import scala.util.{Failure, Success, Try}
+import scala.util.{Failure, Success}
 
 /**
  * The actor that represents the actual processing power allocated to convert CSV to JSON.
@@ -26,109 +25,84 @@ import scala.util.{Failure, Success, Try}
 private[task] object Worker {
   sealed trait WorkerCommand
   final case class ProcessTask(taskRef: TaskRef) extends WorkerCommand
-  private case class StreamTask(executor: ExecutorService) extends WorkerCommand
   final case object CancelTask extends WorkerCommand
-  private case object FailTask extends WorkerCommand
+  final case object StreamCanceled extends WorkerCommand
+  private case class FailTask(exception: Throwable) extends WorkerCommand
   private case object LineProcessed extends WorkerCommand
   private case object FinishTask extends WorkerCommand
-
 
   def apply(overseerRef: OverseerRef): Behavior[WorkerCommand] = idle(overseerRef)
 
   private def idle(overseerRef: OverseerRef): Behavior[WorkerCommand] = Behaviors.setup { context =>
-    overseerRef ! Overseer.IdleWorker(context.self)
+    val selfRef = context.self
+    overseerRef ! Overseer.IdleWorker(selfRef)
     Behaviors.receiveMessage {
       case ProcessTask(taskRef) =>
-        implicit val timeout: Timeout = 100.millis
+        // Doing this entire process synchronously to avoid handling things like cancel coming during HTTP initiation.
+        implicit val timeout: Timeout = 5.seconds
         implicit val scheduler: Scheduler = context.system.scheduler
-        val detail = Await.result(taskRef.ask(ref => Task.Run(context.self, ref)), timeout.duration)
+        val detail = Await.result(taskRef.ask(ref => Task.Run(selfRef, ref)), timeout.duration)
         context.log.info(s"Processing CSV at ${detail.url}")
+        Await.result(overseerRef.ask { ref: SourceConsumerRef =>
+          Overseer.ContactSourceror(Sourceror.InitiateHttp(detail.url, ref))
+        }, timeout.duration) match {
+          case Some(source) =>
+            val executor = Executors.newSingleThreadExecutor()
+            implicit val mat: Materializer = Materializer(context)
+            implicit val executionContext: ExecutionContext = ExecutionContext.fromExecutorService(executor)
+            val killSwitch = KillSwitches.shared(taskRef.path.toString)
+            source
+              .via(flow(killSwitch, selfRef))
+              .runWith(FileIO.toPath(tempDirPath.resolve(filename(taskRef))))
+              .onComplete {
+                case Failure(exception) => exception.getCause match {
+                  case CancelTaskException() =>
+                    selfRef ! StreamCanceled
+                  case _ =>
+                    selfRef ! FailTask(exception)
+                }
+                case Success(_) =>
+                  selfRef ! FinishTask
+              }
 
-        val executor = Executors.newSingleThreadExecutor()
-        implicit val classicSystem: ActorSystem = context.system.classicSystem
-        implicit val executionContext: ExecutionContext = ExecutionContext.fromExecutorService(executor)
-        Http().singleRequest(Get(detail.url))
-          .onComplete(httpOnComplete(context, executor, filename(taskRef), detail.url))
-
-        initiating(taskRef, overseerRef)
-      case x =>
-        context.log.warn(s"Invalid command $x"); Behaviors.same
-    }
-  }
-
-  private def httpOnComplete(context: ActorContext[WorkerCommand], executor: ExecutorService, filename: String,
-                             originalUrl: String, redirects: Int = 0)
-                            (implicit executionContext: ExecutionContext, classicSystem: ActorSystem)
-  : Try[HttpResponse] => Unit = {
-    case Success(response) =>
-      if (response.status.isFailure() || (response.status.isRedirection() && redirects > 3)) {
-        context.log.error(s"HTTP request failed with status ${response.status}.")
-        context.self ! FailTask
-      } else if (response.status.isRedirection()) {
-        // This monstrosity might have a better solution. However:
-        // - Spray HTTP is aging like a fine milk, with only Scala 2.11 support and last version from 2016
-        // - Gigahorse doesn't seem to be very inter-operable with Akka Streams
-        // - other options might exist, but Googling things like Akka Http isRedirection or FollowRedirect find nothing
-        // Thus, I decided to at least come up with a working solution that looks like a dumpster fire.
-        response.entity.discardBytes()
-        val baseUrl = originalUrl.replaceAll("^(https?://[^/]+).*$", "$1")
-        response.headers.find(_.name == "Location").map(_.value).map(redir =>
-          if (redir.startsWith("/")) baseUrl + redir else redir
-        ) match {
-          case Some(redirUrl) =>
-            Http().singleRequest(Get(redirUrl))
-              .onComplete(httpOnComplete(context, executor, filename, originalUrl, redirects + 1))
+            processing(killSwitch, taskRef, overseerRef)
           case None =>
-            context.log.warn("Failed to follow redirections.")
-            context.self ! FailTask
+            taskRef ! Task.Fail
+            idle(overseerRef)
         }
-      } else {
-        implicit val mat: Materializer = Materializer(context)
-        val result = response.entity.dataBytes
-          .via(flow(context.self))
-          .runWith(FileIO.toPath(tempDirPath.resolve(filename)))
-        context.self ! StreamTask(executor)
-        result.onComplete(_ => context.self ! FinishTask)
-      }
-    case Failure(exception) =>
-      context.log.error(s"Failed to start downloading CSV, because of exception thrown:", exception)
-      context.self ! FailTask
-  }
-
-  private def initiating(taskRef: TaskRef, overseerRef: OverseerRef): Behavior[WorkerCommand] = Behaviors.setup { context =>
-    Behaviors.receiveMessage {
-      case StreamTask(executionContext) =>
-        processing(executionContext, taskRef, overseerRef)
-      case FailTask =>
-        taskRef ! Task.Fail
-        idle(overseerRef)
-      case CancelTask =>
-        context.log.warn(s"Cancel during initiation not implemented yet")
-        Behaviors.same
       case x =>
         context.log.warn(s"Invalid command $x"); Behaviors.same
     }
   }
 
-  private def processing(executor: ExecutorService, taskRef: TaskRef, overseerRef: OverseerRef)
+  private def processing(killSwitch: SharedKillSwitch, taskRef: TaskRef, overseerRef: OverseerRef)
   : Behavior[WorkerCommand] = Behaviors.setup { context =>
     Behaviors.receiveMessage {
-      case CancelTask =>
-        executor.shutdownNow()
-        idle(overseerRef)
       case LineProcessed =>
         taskRef ! Task.ProcessLines(1)
         Behaviors.same
+      case CancelTask =>
+        killSwitch.abort(new CancelTaskException)
+        Behaviors.same
+      case StreamCanceled =>
+        taskRef ! Task.WorkerCanceled
+        idle(overseerRef)
       case FinishTask =>
         taskRef ! Task.Finish(filename(taskRef))
+        idle(overseerRef)
+      case FailTask(exception) =>
+        context.log.error("Exception during download of CSV", exception)
+        taskRef ! Task.Fail
         idle(overseerRef)
       case x =>
         context.log.warn(s"Invalid command $x"); Behaviors.same
     }
   }
 
-  private def flow(selfRef: WorkerRef): Flow[ByteString, ByteString, NotUsed] = {
+  // The actual CSV to JSON processing. It is funny how little code had to be written for that and how much for all else
+  private def flow(killSwitch: SharedKillSwitch, selfRef: WorkerRef): Flow[ByteString, ByteString, NotUsed] = {
     CsvParsing.lineScanner()
+      .via(killSwitch.flow)
       .via(CsvToMap.toMapAsStrings())
       .alsoTo(Sink.foreach(_ => selfRef ! LineProcessed)) // should probably be optimized, it's a lot of messages.
       .via(Flow.fromFunction {
@@ -138,4 +112,6 @@ private[task] object Worker {
   }
 
   private def filename(taskRef: TaskRef) = s"${taskRef.path.name}.jsonl"
+
+  private case class CancelTaskException() extends RuntimeException
 }

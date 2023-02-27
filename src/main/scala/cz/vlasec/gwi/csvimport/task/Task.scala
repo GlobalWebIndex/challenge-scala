@@ -16,6 +16,7 @@ private[task] object Task {
   final case class Finish(url: ResultPath) extends TaskCommand
   case object Fail extends TaskCommand
   case object Cancel extends TaskCommand
+  case object WorkerCanceled extends TaskCommand
   final case class ProcessLines(linesAdded: Long) extends TaskCommand
   final case class StatusReport(replyTo: ActorRef[CsvStatusResponse]) extends TaskCommand
 
@@ -84,6 +85,8 @@ private[task] object Task {
         finished(Failed(state.taskId, state.linesProcessed, state.millisElapsed))
       case Cancel =>
         workerRef ! Worker.CancelTask
+        Behaviors.same
+      case WorkerCanceled =>
         finished(Canceled(state.taskId, state.linesProcessed, state.millisElapsed))
     }
     Behaviors.receiveMessagePartial(behaviors.orElse(constantBehaviors(context, state)))
