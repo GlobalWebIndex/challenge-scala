@@ -85,5 +85,5 @@ object Routes {
   def routes(taskServiceRef: ActorRef[ServiceCommand])(implicit scheduler: Scheduler): Route =
     Route.seal(concat(task(taskServiceRef), json))
 
-  case class EnqueueTaskRequest(csvUrl: String)
+  private case class EnqueueTaskRequest(csvUrl: String)
 }
