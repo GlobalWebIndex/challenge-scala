@@ -15,7 +15,7 @@ object Overseer {
 
   def apply(workerCount: Int, serviceRef: ServiceRef)
   : Behavior[OverseerCommand] = Behaviors.setup { context =>
-    (1 to workerCount).map(startWorker(context, _)).foreach(serviceRef ! Service.IdleWorker(_))
+    (1 to workerCount).foreach(startWorker(context, _))
     context.log.info(s"Sending $workerCount idle workers to ${serviceRef.path.name}.")
     overseeing(serviceRef)
   }
@@ -28,7 +28,7 @@ object Overseer {
         Behaviors.same
       case WorkerStopped(workerId) =>
         context.log.warn(s"Restarting stopped worker-$workerId.")
-        serviceRef ! Service.IdleWorker(startWorker(context, workerId))
+        startWorker(context, workerId)
         Behaviors.same
       case x =>
         context.log.warn(s"Invalid command: $x")
@@ -36,9 +36,8 @@ object Overseer {
     }
   }
 
-  private def startWorker(context: ActorContext[OverseerCommand], workerId: Long): WorkerRef = {
+  private def startWorker(context: ActorContext[OverseerCommand], workerId: Long): Unit = {
     val workerRef = context.spawn(Worker(context.self), s"worker-$workerId")
     context.watchWith(workerRef, WorkerStopped(workerId))
-    workerRef
   }
 }

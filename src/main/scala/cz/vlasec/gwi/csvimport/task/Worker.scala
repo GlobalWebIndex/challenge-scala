@@ -130,7 +130,7 @@ private[task] object Worker {
   private def flow(selfRef: WorkerRef): Flow[ByteString, ByteString, NotUsed] = {
     CsvParsing.lineScanner()
       .via(CsvToMap.toMapAsStrings())
-      .alsoTo(Sink.foreach(_ => selfRef ! LineProcessed)) // should probably be optimized
+      .alsoTo(Sink.foreach(_ => selfRef ! LineProcessed)) // should probably be optimized, it's a lot of messages.
       .via(Flow.fromFunction {
         import io.circe.syntax._
         map => ByteString(map.asJson.noSpaces + "\n")

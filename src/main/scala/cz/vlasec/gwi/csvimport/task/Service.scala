@@ -11,9 +11,9 @@ import scala.concurrent.duration.DurationInt
 
 /**
  * Task service receives CSV URLs to process, creates tasks, monitors their status and cancels them on demand.
- * Idle workers need to be supplied for the service to be able to process anything.
- * Task service's behavior depends on its task queue and idle workers count.
- * Task service only spawns actors of type Task as children, so it can list the tasks easily from its actor context.
+ * It doesn't define different behavior states, instead its behavior varies with task queue and idle workers.
+ * It only spawns actors of type Task as children, so it can list the tasks easily from its actor context.
+ * Idle workers need to be supplied externally for the service to be able to process anything.
  */
 object Service {
   sealed trait ServiceCommand
