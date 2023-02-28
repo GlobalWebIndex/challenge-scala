@@ -8,8 +8,8 @@ import akka.stream.{KillSwitches, Materializer, SharedKillSwitch}
 import akka.stream.alpakka.csv.scaladsl.{CsvParsing, CsvToMap}
 import akka.stream.scaladsl.{FileIO, Flow, Sink}
 import akka.util.{ByteString, Timeout}
-import cz.vlasec.gwi.csvimport.Sourceror
-import cz.vlasec.gwi.csvimport.Sourceror.SourceConsumerRef
+import cz.vlasec.gwi.csvimport.HttpSourceror
+import cz.vlasec.gwi.csvimport.HttpSourceror.SourceConsumerRef
 
 import scala.concurrent.{Await, ExecutionContext}
 import scala.concurrent.duration.DurationInt
@@ -42,7 +42,7 @@ private[task] object Worker {
         val detail = Await.result(taskRef.ask(ref => Task.Run(selfRef, ref)), timeout.duration)
         context.log.info(s"Processing CSV at ${detail.url}")
         Await.result(overseerRef.ask { ref: SourceConsumerRef =>
-          Overseer.ContactSourceror(Sourceror.InitiateHttp(detail.url, ref))
+          Overseer.ContactSourceror(HttpSourceror.InitiateHttp(detail.url, ref))
         }, timeout.duration) match {
           case Some(source) =>
             implicit val mat: Materializer = Materializer(context)

@@ -1,6 +1,6 @@
 package cz.vlasec.gwi.csvimport
 
-import cz.vlasec.gwi.csvimport.Sourceror.SourcerorCommand
+import cz.vlasec.gwi.csvimport.HttpSourceror.HttpSourcerorCommand
 
 import java.nio.file.{Files, Path}
 
@@ -32,7 +32,7 @@ package object task {
   private[task] type WorkerRef = ActorRef[WorkerCommand]
   private[task] type ServiceRef = ActorRef[ServiceCommand]
   private[task] type OverseerRef = ActorRef[OverseerCommand]
-  private[task] type SourcerorRef = ActorRef[SourcerorCommand]
+  private[task] type SourcerorRef = ActorRef[HttpSourcerorCommand]
   type CsvStatusResponse = Either[StatusFailure, TaskStatusReport]
 
   lazy val tempDirPath: Path = Files.createTempDirectory("json")

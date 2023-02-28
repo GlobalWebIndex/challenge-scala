@@ -19,20 +19,20 @@ import scala.util.{Failure, Success, Try}
  * and in the end, it returns a Source if available, to leave the heavy lifting to others.
  * As an esteemed magician, the sourceror can clone itself, but prefers not to keep its clones around.
  */
-object Sourceror {
+object HttpSourceror {
   private val MaxRedirects = 5 // to prevent running into redirect loops
 
   type SourceConsumerRef = ActorRef[Option[Source[ByteString, Any]]]
-  sealed trait SourcerorCommand
-  final case class InitiateHttp(url: String, replyTo: SourceConsumerRef) extends SourcerorCommand
-  private case class HandleResponse(response: Try[HttpResponse]) extends SourcerorCommand
-  private case class HandleRedirect(newUrl: String) extends SourcerorCommand
-  private case object Fail extends SourcerorCommand
-  private case class Succeed(source: Source[ByteString, Any]) extends SourcerorCommand
+  sealed trait HttpSourcerorCommand
+  final case class InitiateHttp(url: String, replyTo: SourceConsumerRef) extends HttpSourcerorCommand
+  private case class HandleResponse(response: Try[HttpResponse]) extends HttpSourcerorCommand
+  private case class HandleRedirect(newUrl: String) extends HttpSourcerorCommand
+  private case object Fail extends HttpSourcerorCommand
+  private case class Succeed(source: Source[ByteString, Any]) extends HttpSourcerorCommand
 
-  def apply(): Behavior[SourcerorCommand] = idle()
+  def apply(): Behavior[HttpSourcerorCommand] = idle()
 
-  private def idle(clone: Boolean = false): Behavior[SourcerorCommand] = Behaviors.setup { context =>
+  private def idle(clone: Boolean = false): Behavior[HttpSourcerorCommand] = Behaviors.setup { context =>
     Behaviors.receiveMessage {
       case InitiateHttp(url, replyTo) =>
         busy(url, replyTo)
@@ -42,7 +42,7 @@ object Sourceror {
   }
 
   private def busy(url: String, replyTo: SourceConsumerRef, redirects: Int = 0, clone: Boolean = false)
-  : Behavior[SourcerorCommand] = Behaviors.setup { context =>
+  : Behavior[HttpSourcerorCommand] = Behaviors.setup { context =>
     implicit val classicSystem: ActorSystem = context.system.classicSystem
     implicit val executionContext: ExecutionContext = context.system.executionContext
 
@@ -50,7 +50,7 @@ object Sourceror {
       .onComplete(context.self ! HandleResponse(_))
     Behaviors.receiveMessage {
       case InitiateHttp(aUrl, aReplyTo) =>
-        context.spawnAnonymous[SourcerorCommand](idle(clone = true)) ! InitiateHttp(aUrl, aReplyTo)
+        context.spawnAnonymous[HttpSourcerorCommand](idle(clone = true)) ! InitiateHttp(aUrl, aReplyTo)
         Behaviors.same
       case HandleResponse(response) =>
         handleResponse(response, url, context)
@@ -73,7 +73,7 @@ object Sourceror {
     }
   }
 
-  private def handleResponse(tried: Try[HttpResponse], url: String, context: ActorContext[SourcerorCommand]): Unit = tried match {
+  private def handleResponse(tried: Try[HttpResponse], url: String, context: ActorContext[HttpSourcerorCommand]): Unit = tried match {
     case Success(response) =>
       implicit val materializer: Materializer = Materializer(context)
       if (response.status.isFailure()) {

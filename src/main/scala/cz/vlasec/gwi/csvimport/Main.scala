@@ -4,7 +4,7 @@ import akka.actor.typed.ActorSystem
 import akka.actor.typed.scaladsl.Behaviors
 import akka.http.scaladsl.Http
 import cz.vlasec.gwi.csvimport.Routes._
-import cz.vlasec.gwi.csvimport.Sourceror.SourcerorCommand
+import cz.vlasec.gwi.csvimport.HttpSourceror.HttpSourcerorCommand
 import cz.vlasec.gwi.csvimport.task.Overseer.{OverseerCommand => TaskOverseerCommand}
 import cz.vlasec.gwi.csvimport.task.{Overseer => TaskOverseer, Service => TaskService}
 import cz.vlasec.gwi.csvimport.task.Service.{ServiceCommand => TaskServiceCommand}
@@ -17,7 +17,7 @@ object Main {
     implicit val system: ActorSystem[_] = ActorSystem(Behaviors.empty, "my-system")
 
     val taskServiceRef = system.systemActorOf[TaskServiceCommand](TaskService(), "task-service")
-    val sourcerorRef = system.systemActorOf[SourcerorCommand](Sourceror(), "sourceror")
+    val sourcerorRef = system.systemActorOf[HttpSourcerorCommand](HttpSourceror(), "sourceror")
     system.systemActorOf[TaskOverseerCommand](TaskOverseer(workerCount = 2, taskServiceRef, sourcerorRef), "task-overseer")
 
 

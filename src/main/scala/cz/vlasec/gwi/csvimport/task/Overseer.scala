@@ -2,7 +2,7 @@ package cz.vlasec.gwi.csvimport.task
 
 import akka.actor.typed.Behavior
 import akka.actor.typed.scaladsl.{ActorContext, Behaviors}
-import cz.vlasec.gwi.csvimport.Sourceror.SourcerorCommand
+import cz.vlasec.gwi.csvimport.HttpSourceror.HttpSourcerorCommand
 
 /**
  * Overseer (or supervisor) spawns workers and manages them.
@@ -12,7 +12,7 @@ import cz.vlasec.gwi.csvimport.Sourceror.SourcerorCommand
 object Overseer {
   sealed trait OverseerCommand
   private[task] final case class IdleWorker(workerRef:WorkerRef) extends OverseerCommand
-  private[task] final case class ContactSourceror(command: SourcerorCommand) extends OverseerCommand
+  private[task] final case class ContactSourceror(command: HttpSourcerorCommand) extends OverseerCommand
   private[Overseer] final case class WorkerStopped(workerId: Long) extends OverseerCommand
 
   def apply(workerCount: Int, serviceRef: ServiceRef, sourcerorRef: SourcerorRef)
